@@ -1,6 +1,8 @@
 # Agent Realms
 
-Agent Realms is a local-only RPG operations map for this Windows PC. It observes agent-like local processes, folders, logs, and loopback-only status endpoints, then renders them as fantasy RPG characters in connected ecosystems.
+Agent Realms is a local-only RPG operations map for this Windows PC. It observes agent-like local processes, folders, logs, and loopback-only status endpoints, then renders currently running agents as fantasy RPG characters in connected ecosystems.
+
+The live UI is built around a Moonlit Operations Map: the left rail lists every currently running detected agent/session, the central map groups them into decluttered RPG ecosystems, and the detail panel updates with that agent's live status, process evidence, progress-like RPG action, uptime, ports, redacted log snippets, and classification reasons.
 
 Normal operation consumes zero hosted model tokens. The app does not include OpenAI, Anthropic, Gemini, Groq, OpenRouter, hosted LangChain model clients, or browser-chat automation. The backend reads local process metadata, local folders, optional local logs, and localhost-only status endpoints. RPG classes, quests, events, and character state are deterministic templates.
 
@@ -35,7 +37,7 @@ The runtime proof is visible in the top ribbon. Code-level proof is enforced by 
 
 Permanent URL: https://agentsgamesystem.netlify.app
 
-The global URL runs as a static preview because a public site cannot inspect private Windows processes. For live local discovery, run `npm run dev` on this PC.
+The global URL can show this PC's real running agents only while the local observer and HTTPS tunnel are running. A public static site cannot inspect private Windows processes by itself; the bridge below is the token-free live observation path.
 
 ## Live Global Bridge
 

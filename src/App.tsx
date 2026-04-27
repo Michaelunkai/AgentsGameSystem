@@ -5,6 +5,7 @@ import './index.css';
 
 const statusOrder: AgentStatus[] = ['active', 'waiting', 'blocked', 'failed', 'completed', 'idle', 'sleeping', 'unknown'];
 const githubRepositoryUrl = 'https://github.com/Michaelunkai/AgentsGameSystem';
+const liveRefreshMs = 4000;
 
 interface LiveObserverConfig {
   enabled: boolean;
@@ -13,11 +14,31 @@ interface LiveObserverConfig {
   note?: string;
 }
 
+interface AgentCluster {
+  key: string;
+  title: string;
+  biome: string;
+  glyph: string;
+  agents: RpgAgent[];
+  activeCount: number;
+  dangerCount: number;
+  x: number;
+  y: number;
+}
+
 function formatDuration(seconds?: number): string {
   if (!seconds) return 'unknown';
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
   return hours ? `${hours}h ${minutes}m` : `${minutes}m`;
+}
+
+function formatFreshness(iso?: string): string {
+  if (!iso) return 'scanning';
+  const seconds = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  if (seconds < 5) return 'live now';
+  if (seconds < 60) return `${seconds}s ago`;
+  return `${Math.floor(seconds / 60)}m ago`;
 }
 
 function Glyph({ portrait }: { portrait: string }) {
@@ -38,16 +59,61 @@ function Glyph({ portrait }: { portrait: string }) {
   return <span aria-hidden="true">{glyphs[portrait] ?? '◆'}</span>;
 }
 
-function AgentMarker({ agent, selected, onSelect }: { agent: RpgAgent; selected: boolean; onSelect: (id: string) => void }) {
+const clusterPositions: Record<string, Pick<AgentCluster, 'title' | 'biome' | 'glyph' | 'x' | 'y'>> = {
+  codex: { title: 'Codex Forge Circle', biome: 'Silver Forge City', glyph: '⚒', x: 23, y: 58 },
+  claude: { title: 'Claude Archive Choir', biome: 'Moonlit Archive', glyph: '§', x: 68, y: 24 },
+  openclaw: { title: 'OpenClaw Herald Gate', biome: 'Signal Harbor', glyph: '◈', x: 79, y: 66 },
+  ollama: { title: 'Ollama Dragon Peak', biome: 'GPU Crystal Mountain', glyph: '♜', x: 45, y: 18 },
+  browser: { title: 'Browser Ranger Watch', biome: 'Portal Canopy', glyph: '⌖', x: 37, y: 76 },
+  telegram: { title: 'Telegram Horn Tower', biome: 'Message Coast', glyph: '⚑', x: 88, y: 42 },
+  docker: { title: 'Docker Brass Docks', biome: 'Container Harbor', glyph: '⬢', x: 57, y: 82 },
+  powershell: { title: 'PowerShell Rune Hall', biome: 'Command Citadel', glyph: '✦', x: 15, y: 31 },
+  node: { title: 'Node Clockwork Grove', biome: 'Service Grove', glyph: '⚙', x: 55, y: 49 },
+  'local-service': { title: 'Local Service Bastion', biome: 'Loopback Keep', glyph: '⬟', x: 72, y: 51 },
+  manual: { title: 'Manual Charter Camp', biome: 'Charter Field', glyph: '◌', x: 28, y: 20 },
+  unknown: { title: 'Unknown Traveler Road', biome: 'Fog Road', glyph: '◆', x: 50, y: 62 }
+};
+
+function buildClusters(agents: RpgAgent[]): AgentCluster[] {
+  const groups = new Map<string, RpgAgent[]>();
+  agents.forEach((agent) => {
+    const key = agent.type in clusterPositions ? agent.type : 'unknown';
+    groups.set(key, [...(groups.get(key) ?? []), agent]);
+  });
+  return Array.from(groups.entries())
+    .map(([key, clusterAgents]) => {
+      const defaults = clusterPositions[key];
+      return {
+        key,
+        ...defaults,
+        agents: clusterAgents,
+        activeCount: clusterAgents.filter((agent) => agent.status === 'active').length,
+        dangerCount: clusterAgents.filter((agent) => agent.status === 'blocked' || agent.status === 'failed').length
+      };
+    })
+    .sort((left, right) => right.agents.length - left.agents.length);
+}
+
+function ClusterNode({
+  cluster,
+  selected,
+  onSelect
+}: {
+  cluster: AgentCluster;
+  selected: boolean;
+  onSelect: (cluster: AgentCluster) => void;
+}) {
+  const aura = cluster.dangerCount ? 'danger' : cluster.activeCount ? 'active' : 'quiet';
   return (
     <button
-      className={`agent-marker ${agent.aura} ${selected ? 'selected' : ''}`}
-      style={{ left: `${agent.territory.x}%`, top: `${agent.territory.y}%` }}
-      onClick={() => onSelect(agent.id)}
-      aria-label={`Inspect ${agent.name}`}
+      className={`cluster-node ${aura} ${selected ? 'selected' : ''}`}
+      style={{ left: `${cluster.x}%`, top: `${cluster.y}%` }}
+      onClick={() => onSelect(cluster)}
+      aria-label={`Inspect ${cluster.title}`}
     >
-      <Glyph portrait={agent.portrait} />
-      <span>{agent.name.split(' ')[0]}</span>
+      <span className="cluster-glyph" aria-hidden="true">{cluster.glyph}</span>
+      <strong>{cluster.agents.length}</strong>
+      <span>{cluster.title}</span>
     </button>
   );
 }
@@ -100,7 +166,9 @@ function DetailPanel({ agent }: { agent?: RpgAgent }) {
         <dl className="evidence-grid">
           <dt>Source</dt><dd>{agent.signal.source}</dd>
           <dt>Process</dt><dd>{agent.signal.processName ?? 'not process-bound'}</dd>
+          <dt>PID</dt><dd>{agent.signal.pid ?? 'not exposed'}</dd>
           <dt>Uptime</dt><dd>{formatDuration(agent.signal.uptimeSeconds)}</dd>
+          <dt>Last seen</dt><dd>{formatFreshness(agent.signal.lastSeenIso)}</dd>
           <dt>Ports</dt><dd>{agent.signal.ports.length ? agent.signal.ports.join(', ') : 'none'}</dd>
         </dl>
       </section>
@@ -116,6 +184,69 @@ function DetailPanel({ agent }: { agent?: RpgAgent }) {
           {agent.signal.logSnippets.length ? agent.signal.logSnippets.map((line) => <code key={line}>{line}</code>) : <code>No readable configured log snippet.</code>}
         </div>
       </section>
+    </aside>
+  );
+}
+
+function AgentMenu({
+  agents,
+  selectedId,
+  search,
+  onSearch,
+  filter,
+  onFilter,
+  onSelect
+}: {
+  agents: RpgAgent[];
+  selectedId?: string;
+  search: string;
+  filter: AgentStatus | 'all';
+  onSearch: (search: string) => void;
+  onFilter: (filter: AgentStatus | 'all') => void;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <aside className="agent-nav" aria-label="Running agents and sessions">
+      <div className="agent-nav-title">
+        <p className="eyebrow">Running Sessions</p>
+        <h2>{agents.length} live</h2>
+      </div>
+      <label className="search-field">
+        Find agent
+        <input value={search} onChange={(event) => onSearch(event.target.value)} placeholder="codex, browser, node..." />
+      </label>
+      <label className="search-field">
+        Status
+        <select value={filter} onChange={(event) => onFilter(event.target.value as AgentStatus | 'all')}>
+          <option value="all">All currently running</option>
+          {statusOrder.map((status) => <option key={status} value={status}>{status}</option>)}
+        </select>
+      </label>
+      <div className="agent-menu-list" role="listbox" aria-label="Every currently running detected agent">
+        {agents.map((agent) => (
+          <button
+            key={agent.id}
+            className={`agent-menu-item ${agent.status} ${agent.id === selectedId ? 'selected' : ''}`}
+            onClick={() => onSelect(agent.id)}
+            role="option"
+            aria-selected={agent.id === selectedId}
+          >
+            <span className={`mini-orb ${agent.aura}`}><Glyph portrait={agent.portrait} /></span>
+            <span>
+              <strong>{agent.name}</strong>
+              <em>{agent.className} · {agent.signal.processName ?? agent.type}</em>
+              <small>{agent.liveAction}</small>
+            </span>
+            <i>{agent.status}</i>
+          </button>
+        ))}
+        {!agents.length && (
+          <div className="no-menu-results">
+            <strong>No running agents match this view.</strong>
+            <p>Clear filters or start a local agent process; configured-but-stopped sources are intentionally hidden.</p>
+          </div>
+        )}
+      </div>
     </aside>
   );
 }
@@ -142,6 +273,7 @@ function App() {
   const [snapshot, setSnapshot] = useState<RealmSnapshot>();
   const [selectedId, setSelectedId] = useState<string>();
   const [filter, setFilter] = useState<AgentStatus | 'all'>('all');
+  const [search, setSearch] = useState('');
   const [paused, setPaused] = useState(false);
   const [error, setError] = useState<string>();
   const [connectionMode, setConnectionMode] = useState('local observer pending');
@@ -166,7 +298,7 @@ function App() {
         const liveSnapshot = await fetchLiveObserverSnapshot();
         if (liveSnapshot) {
           setSnapshot(liveSnapshot);
-          setSelectedId((current) => current ?? liveSnapshot.agents[0]?.id);
+          setSelectedId((current) => liveSnapshot.agents.some((agent) => agent.id === current) ? current : liveSnapshot.agents[0]?.id);
           setError(undefined);
           return;
         }
@@ -186,7 +318,7 @@ function App() {
       const data = await response.json() as RealmSnapshot;
       setConnectionMode('live local Windows observer');
       setSnapshot(data);
-      setSelectedId((current) => current ?? data.agents[0]?.id);
+      setSelectedId((current) => data.agents.some((agent) => agent.id === current) ? current : data.agents[0]?.id);
       setError(undefined);
     } catch (refreshError) {
       setError(refreshError instanceof Error ? refreshError.message : 'unknown observer failure');
@@ -196,7 +328,7 @@ function App() {
 
   useEffect(() => {
     const initial = window.setTimeout(() => void refresh(), 0);
-    const timer = window.setInterval(() => void refresh(), 8000);
+    const timer = window.setInterval(() => void refresh(), liveRefreshMs);
     return () => {
       window.clearTimeout(initial);
       window.clearInterval(timer);
@@ -205,8 +337,14 @@ function App() {
 
   const agents = useMemo(() => {
     const list = snapshot?.agents ?? [];
-    return filter === 'all' ? list : list.filter((agent) => agent.status === filter);
-  }, [snapshot, filter]);
+    const normalizedSearch = search.trim().toLowerCase();
+    return list.filter((agent) => {
+      const matchesStatus = filter === 'all' || agent.status === filter;
+      const haystack = `${agent.name} ${agent.type} ${agent.className} ${agent.liveAction} ${agent.signal.processName ?? ''}`.toLowerCase();
+      return matchesStatus && (!normalizedSearch || haystack.includes(normalizedSearch));
+    });
+  }, [snapshot, filter, search]);
+  const clusters = useMemo(() => buildClusters(agents), [agents]);
   const selected = snapshot?.agents.find((agent) => agent.id === selectedId) ?? agents[0];
 
   return (
@@ -235,13 +373,10 @@ function App() {
       {error && <div className="error-banner">Observer issue: {error}. The realm remains available with the last successful state.</div>}
 
       <section className="control-bar">
-        <label>
-          Filter realm
-          <select value={filter} onChange={(event) => setFilter(event.target.value as AgentStatus | 'all')}>
-            <option value="all">All statuses</option>
-            {statusOrder.map((status) => <option key={status} value={status}>{status}</option>)}
-          </select>
-        </label>
+        <div className="live-metrics" aria-label="Live observer status">
+          <strong>{snapshot?.agents.length ?? 0}</strong>
+          <span>currently running agents · refresh every {liveRefreshMs / 1000}s · last pulse {formatFreshness(snapshot?.generatedAtIso)}</span>
+        </div>
         <strong className="connection-mode">{connectionMode}</strong>
         <div className="discovery-notes">
           {(snapshot?.discoveryNotes ?? ['Loading discovery adapters...']).map((note) => <span key={note}>{note}</span>)}
@@ -249,30 +384,49 @@ function App() {
       </section>
 
       <section className="realm-layout">
+        <AgentMenu
+          agents={agents}
+          selectedId={selected?.id}
+          search={search}
+          onSearch={setSearch}
+          filter={filter}
+          onFilter={setFilter}
+          onSelect={setSelectedId}
+        />
+
         <div className="map-panel">
           <div className="map-header">
             <div>
               <p className="eyebrow">Moonlit Operations Map</p>
-              <h2>{agents.length ? `${agents.length} living agents` : 'No live agents yet'}</h2>
+              <h2>{clusters.length ? `${clusters.length} ecosystems, ${agents.length} agents` : 'No live agents yet'}</h2>
             </div>
             <span>{snapshot ? new Date(snapshot.generatedAtIso).toLocaleTimeString() : 'scanning...'}</span>
           </div>
           <div className="world-map" role="region" aria-label="Agent ecosystem map">
+            <div className="moon-disc" />
             <div className="route route-a" />
             <div className="route route-b" />
-            <div className="biome biome-forge">Forge City</div>
-            <div className="biome biome-archive">Archive</div>
-            <div className="biome biome-harbor">Harbor</div>
-            <div className="biome biome-mountain">GPU Mountain</div>
-            {agents.map((agent) => <AgentMarker key={agent.id} agent={agent} selected={agent.id === selected?.id} onSelect={setSelectedId} />)}
+            <div className="route route-c" />
+            <div className="biome biome-forge">Silver Forge City</div>
+            <div className="biome biome-archive">Moonlit Archive</div>
+            <div className="biome biome-harbor">Signal Harbor</div>
+            <div className="biome biome-mountain">GPU Crystal Mountain</div>
+            {clusters.map((cluster) => (
+              <ClusterNode
+                key={cluster.key}
+                cluster={cluster}
+                selected={cluster.agents.some((agent) => agent.id === selected?.id)}
+                onSelect={(selectedCluster) => setSelectedId(selectedCluster.agents[0]?.id)}
+              />
+            ))}
             {!agents.length && <div className="guided-setup">Add manual agents in <code>agent-realms.config.json</code> or start local tools; missing sources become sleeping travelers instead of crashes.</div>}
           </div>
-          <div className="roster">
-            {agents.map((agent) => (
-              <button key={agent.id} className={agent.id === selected?.id ? 'active' : ''} onClick={() => setSelectedId(agent.id)}>
-                <Glyph portrait={agent.portrait} />
-                <span>{agent.name}</span>
-                <em>{agent.status}</em>
+          <div className="ecosystem-strip">
+            {clusters.map((cluster) => (
+              <button key={cluster.key} className={cluster.agents.some((agent) => agent.id === selected?.id) ? 'active' : ''} onClick={() => setSelectedId(cluster.agents[0]?.id)}>
+                <span>{cluster.glyph}</span>
+                <strong>{cluster.title}</strong>
+                <em>{cluster.agents.length} running · {cluster.activeCount} active</em>
               </button>
             ))}
           </div>

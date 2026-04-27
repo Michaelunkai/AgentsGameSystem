@@ -7,17 +7,57 @@ $ErrorActionPreference = "Stop"
 $logDir = Join-Path $ProjectRoot ".agent-realms-live"
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 
+$tokenFile = Join-Path $logDir "control-token.txt"
+if (-not $env:AGENT_REALMS_CONTROL_TOKEN) {
+  if (Test-Path $tokenFile) {
+    $env:AGENT_REALMS_CONTROL_TOKEN = (Get-Content -Raw -LiteralPath $tokenFile).Trim()
+  } else {
+    $bytes = New-Object byte[] 32
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+      $rng.GetBytes($bytes)
+    } finally {
+      $rng.Dispose()
+    }
+    $env:AGENT_REALMS_CONTROL_TOKEN = [Convert]::ToBase64String($bytes).TrimEnd("=").Replace("+", "-").Replace("/", "_")
+    Set-Content -LiteralPath $tokenFile -Value $env:AGENT_REALMS_CONTROL_TOKEN -Encoding utf8
+  }
+}
+
 $serverLog = Join-Path $logDir "observer.log"
 $tunnelOutLog = Join-Path $logDir "cloudflared.out.log"
 $tunnelErrLog = Join-Path $logDir "cloudflared.err.log"
 $configPath = Join-Path $ProjectRoot "public\live-observer.json"
 
-$server = Start-Process -FilePath "cmd.exe" -ArgumentList "/c", "npx tsx server/index.ts > `"$serverLog`" 2>&1" -WorkingDirectory $ProjectRoot -PassThru -WindowStyle Hidden
-Start-Sleep -Seconds 4
+Get-CimInstance Win32_Process |
+  Where-Object {
+    $_.CommandLine -and
+    (
+      ($_.CommandLine -like "*$ProjectRoot*" -and $_.CommandLine -like "*server/index.ts*") -or
+      ($_.CommandLine -like "*cloudflared*tunnel*127.0.0.1:$ObserverPort*")
+    )
+  } |
+  ForEach-Object {
+    Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+  }
 
-$health = Invoke-RestMethod -Uri "http://127.0.0.1:$ObserverPort/api/health" -TimeoutSec 10
+$serverArgs = "/c", "set AGENT_REALMS_PORT=$ObserverPort&& npx tsx server/index.ts > `"$serverLog`" 2>&1"
+$server = Start-Process -FilePath "cmd.exe" -ArgumentList $serverArgs -WorkingDirectory $ProjectRoot -PassThru -WindowStyle Hidden
+
+$health = $null
+$healthDeadline = (Get-Date).AddSeconds(45)
+while ((Get-Date) -lt $healthDeadline -and -not $health) {
+  Start-Sleep -Seconds 2
+  try {
+    $health = Invoke-RestMethod -Uri "http://127.0.0.1:$ObserverPort/api/health" -TimeoutSec 5
+  } catch {
+    $health = $null
+  }
+}
+
 if (-not $health.ok) {
-  throw "Local observer health check failed."
+  $tail = if (Test-Path $serverLog) { (Get-Content $serverLog -Tail 30) -join "`n" } else { "observer log missing" }
+  throw "Local observer health check failed. Last observer log lines:`n$tail"
 }
 
 $cloudflared = Get-Command cloudflared -ErrorAction Stop
@@ -43,14 +83,17 @@ if (-not $publicUrl) {
 $config = [ordered]@{
   enabled = $true
   observerUrl = $publicUrl
+  controlAvailable = $true
   updatedAtIso = (Get-Date).ToUniversalTime().ToString("o")
-  note = "Live bridge to this Windows PC. Requires the local observer and cloudflared processes to keep running."
+  note = "Live bridge to this Windows PC. Passive viewing is token-free; active control requires the local token and may consume Codex/model tokens."
 }
 $config | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $configPath -Encoding utf8
 
-[pscustomobject]@{
-  ObserverPid = $server.Id
-  TunnelPid = $tunnel.Id
-  ObserverUrl = $publicUrl
-  ConfigPath = $configPath
-}
+Write-Host "SiteUrl: https://agentsgamesystem.netlify.app/"
+Write-Host "ObserverPid: $($server.Id)"
+Write-Host "TunnelPid: $($tunnel.Id)"
+Write-Host "ObserverUrl: $publicUrl"
+Write-Host "ConfigPath: $configPath"
+Write-Host "ControlTokenFile: $tokenFile"
+Write-Host "ControlToken: $env:AGENT_REALMS_CONTROL_TOKEN"
+Write-Host "RebootReconnectCommand: cd /d `"$ProjectRoot`" && powershell -ExecutionPolicy Bypass -File .\scripts\start-live-bridge.ps1"

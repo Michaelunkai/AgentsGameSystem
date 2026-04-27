@@ -1,6 +1,7 @@
-{
-  "enabled": true,
-  "observerUrl": "https://rhythm-emission-lamp-differently.trycloudflare.com",
-  "updatedAtIso": "2026-04-27T21:31:01.1767721Z",
-  "note": "Live bridge to this Windows PC. Requires the local observer and cloudflared processes to keep running."
+﻿{
+    "enabled":  true,
+    "observerUrl":  "https://aids-speaker-playback-predict.trycloudflare.com",
+    "controlAvailable":  true,
+    "updatedAtIso":  "2026-04-27T22:39:32.5304454Z",
+    "note":  "Live bridge to this Windows PC. Passive viewing is token-free; active control requires the local token and may consume Codex/model tokens."
 }

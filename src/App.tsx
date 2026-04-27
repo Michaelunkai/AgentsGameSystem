@@ -11,6 +11,33 @@ const streamRefreshMs = 2500;
 interface LiveObserverConfig {
   enabled: boolean;
   observerUrl?: string;
+  controlAvailable?: boolean;
+}
+
+interface ControlEvent {
+  id: number;
+  atIso: string;
+  type: 'status' | 'stdout' | 'stderr' | 'agent_message' | 'error';
+  text: string;
+}
+
+interface ControlSession {
+  id: string;
+  title: string;
+  mode: 'codex-exec-one-shot';
+  status: 'queued' | 'running' | 'completed' | 'failed';
+  createdAtIso: string;
+  updatedAtIso: string;
+  events?: ControlEvent[];
+}
+
+interface ControlStatus {
+  enabled: boolean;
+  authenticated: boolean;
+  mode: string;
+  tokenRequired: boolean;
+  warning: string;
+  activeSessions: ControlSession[];
 }
 
 interface AgentCluster {
@@ -296,6 +323,88 @@ function SessionTimeline({ events, selectedId }: { events: RealmEvent[]; selecte
   );
 }
 
+function ControlConsole({
+  observerUrl,
+  selectedAgent,
+  status,
+  token,
+  prompt,
+  controlSession,
+  streamError,
+  onTokenChange,
+  onPromptChange,
+  onUnlock,
+  onSend
+}: {
+  observerUrl?: string;
+  selectedAgent?: RpgAgent;
+  status?: ControlStatus;
+  token: string;
+  prompt: string;
+  controlSession?: ControlSession;
+  streamError?: string;
+  onTokenChange: (token: string) => void;
+  onPromptChange: (prompt: string) => void;
+  onUnlock: () => void;
+  onSend: () => void;
+}) {
+  const unlocked = Boolean(status?.authenticated);
+  const isRunning = controlSession?.status === 'running' || controlSession?.status === 'queued';
+  const selectedMode = selectedAgent?.signal.source === 'codex-session-adapter'
+    ? 'Selected left-menu Codex sessions are view-only transcript sources. Dashboard-created sessions below are controllable.'
+    : 'Select Codex sessions on the left to watch transcripts; use this console to create controllable dashboard runs.';
+
+  return (
+    <aside className="control-console" aria-label="Remote Codex control console">
+      <div>
+        <p className="eyebrow">Secure Control Console</p>
+        <h2>Talk to local Codex</h2>
+        <p className="control-copy">Passive viewing remains token-free. Sending messages invokes local Codex on this PC and may consume model/Codex tokens exactly like terminal Codex.</p>
+      </div>
+      <div className="control-status-grid">
+        <span><strong>Bridge</strong>{observerUrl ? 'remote tunnel configured' : 'local / not configured'}</span>
+        <span><strong>Auth</strong>{unlocked ? 'unlocked' : 'locked'}</span>
+        <span><strong>Mode</strong>{status?.mode ?? 'checking'}</span>
+        <span><strong>Session</strong>{controlSession?.status ?? 'none'}</span>
+      </div>
+      <p className="mode-note">{selectedMode}</p>
+      <label className="search-field">
+        Local control token
+        <input
+          type="password"
+          value={token}
+          onChange={(event) => onTokenChange(event.target.value)}
+          placeholder="Paste token printed by start-live-bridge.ps1"
+          autoComplete="current-password"
+        />
+      </label>
+      <button onClick={onUnlock} disabled={!token.trim()}>Unlock control</button>
+      <label className="search-field">
+        Prompt to local Codex
+        <textarea
+          value={prompt}
+          onChange={(event) => onPromptChange(event.target.value)}
+          placeholder="Ask dashboard-owned Codex to do something safe and specific..."
+          rows={5}
+        />
+      </label>
+      <button className="send-control" onClick={onSend} disabled={!unlocked || !prompt.trim() || isRunning}>
+        {isRunning ? 'Codex running...' : 'Send to local Codex'}
+      </button>
+      {streamError && <div className="error-banner compact">Control issue: {streamError}</div>}
+      <div className="control-stream" aria-live="polite">
+        {(controlSession?.events ?? []).length ? controlSession?.events?.map((event) => (
+          <code key={event.id} className={event.type}>
+            <time>{new Date(event.atIso).toLocaleTimeString()}</time>
+            <strong>{event.type}</strong>
+            {event.text}
+          </code>
+        )) : <code>Unlock, send a prompt, and this panel will show real streamed Codex output from the local bridge.</code>}
+      </div>
+    </aside>
+  );
+}
+
 function App() {
   const [snapshot, setSnapshot] = useState<RealmSnapshot>();
   const [selectedId, setSelectedId] = useState<string>();
@@ -305,6 +414,12 @@ function App() {
   const [error, setError] = useState<string>();
   const [connectionMode, setConnectionMode] = useState('local observer pending');
   const [streamMode, setStreamMode] = useState<'connecting' | 'streaming' | 'polling' | 'paused'>('connecting');
+  const [observerUrl, setObserverUrl] = useState<string>();
+  const [controlToken, setControlToken] = useState(() => window.localStorage.getItem('agent-realms-control-token') ?? '');
+  const [controlStatus, setControlStatus] = useState<ControlStatus>();
+  const [controlPrompt, setControlPrompt] = useState('Reply with DASHBOARD_CONTROL_PROOF and no file changes.');
+  const [controlSession, setControlSession] = useState<ControlSession>();
+  const [controlError, setControlError] = useState<string>();
   const isLocalObserverHost = ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
 
   const applyLiveSnapshot = useCallback((liveSnapshot: RealmSnapshot, mode: string) => {
@@ -322,10 +437,37 @@ function App() {
     return config.enabled && config.observerUrl ? config.observerUrl.replace(/\/$/, '') : undefined;
   }, [isLocalObserverHost]);
 
+  const controlHeaders = useCallback((token = controlToken) => ({
+    Authorization: `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  }), [controlToken]);
+
+  const controlEndpoint = useCallback(async (path: string) => {
+    const liveUrl = await readLiveObserverUrl();
+    setObserverUrl(liveUrl || undefined);
+    return liveUrl ? `${liveUrl}${path}` : path;
+  }, [readLiveObserverUrl]);
+
+  const refreshControlStatus = useCallback(async (token = controlToken) => {
+    try {
+      const endpoint = await controlEndpoint('/api/control/status');
+      const response = await fetch(endpoint, { headers: token.trim() ? controlHeaders(token) : undefined, cache: 'no-store' });
+      if (!response.ok) throw new Error(`control status returned ${response.status}`);
+      const data = await response.json() as ControlStatus;
+      setControlStatus(data);
+      setControlError(undefined);
+      return data;
+    } catch (statusError) {
+      setControlError(statusError instanceof Error ? statusError.message : 'control status failed');
+      return undefined;
+    }
+  }, [controlEndpoint, controlHeaders, controlToken]);
+
   const refresh = useCallback(async () => {
     if (paused || streamMode === 'streaming') return;
     try {
       const observerUrl = await readLiveObserverUrl();
+      setObserverUrl(observerUrl || undefined);
       if (observerUrl === undefined) {
         setConnectionMode('static preview: no live observer URL configured');
         setSnapshot(staticPreviewSnapshot());
@@ -393,6 +535,93 @@ function App() {
       window.clearInterval(timer);
     };
   }, [refresh]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void refreshControlStatus(), 0);
+    return () => window.clearTimeout(timer);
+  }, [refreshControlStatus]);
+
+  const consumeControlStream = useCallback(async (sessionId: string, token: string) => {
+    let finished = false;
+    const controller = new AbortController();
+    const pollTimer = window.setInterval(() => {
+      void (async () => {
+        if (finished) return;
+        const snapshotEndpoint = await controlEndpoint(`/api/control/sessions/${sessionId}`);
+        const snapshotResponse = await fetch(snapshotEndpoint, { headers: controlHeaders(token), cache: 'no-store' });
+        if (!snapshotResponse.ok) return;
+        const snapshot = await snapshotResponse.json() as ControlSession;
+        setControlSession(snapshot);
+        finished = snapshot.status === 'completed' || snapshot.status === 'failed';
+        if (finished) {
+          window.clearInterval(pollTimer);
+          controller.abort();
+        }
+      })();
+    }, 2500);
+
+    const endpoint = await controlEndpoint(`/api/control/sessions/${sessionId}/stream`);
+    const response = await fetch(endpoint, { headers: controlHeaders(token), cache: 'no-store', signal: controller.signal });
+    if (!response.ok || !response.body) {
+      window.clearInterval(pollTimer);
+      throw new Error(`control stream returned ${response.status}`);
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    try {
+      while (!finished) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const chunks = buffer.split('\n\n');
+        buffer = chunks.pop() ?? '';
+        for (const chunk of chunks) {
+          const dataLine = chunk.split('\n').find((line) => line.startsWith('data: '));
+          if (!dataLine) continue;
+          const next = JSON.parse(dataLine.slice(6)) as ControlSession;
+          setControlSession(next);
+          finished = next.status === 'completed' || next.status === 'failed';
+          if (finished) {
+            reader.cancel().catch(() => undefined);
+            return;
+          }
+        }
+      }
+    } finally {
+      window.clearInterval(pollTimer);
+    }
+  }, [controlEndpoint, controlHeaders]);
+
+  const unlockControl = useCallback(() => {
+    const token = controlToken.trim();
+    if (!token) return;
+    window.localStorage.setItem('agent-realms-control-token', token);
+    void refreshControlStatus(token);
+  }, [controlToken, refreshControlStatus]);
+
+  const sendControlPrompt = useCallback(async () => {
+    const token = controlToken.trim();
+    if (!token || !controlPrompt.trim()) return;
+    try {
+      setControlError(undefined);
+      const endpoint = await controlEndpoint('/api/control/sessions');
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: controlHeaders(token),
+        body: JSON.stringify({ prompt: controlPrompt })
+      });
+      if (response.status === 401 || response.status === 403) throw new Error('auth failure: invalid or missing local control token');
+      if (!response.ok) throw new Error(`control request returned ${response.status}`);
+      const session = await response.json() as ControlSession;
+      setControlSession({ ...session, events: [] });
+      void refreshControlStatus(token);
+      await consumeControlStream(session.id, token);
+    } catch (sendError) {
+      if (sendError instanceof DOMException && sendError.name === 'AbortError') return;
+      setControlError(sendError instanceof Error ? sendError.message : 'control send failed');
+    }
+  }, [consumeControlStream, controlEndpoint, controlHeaders, controlPrompt, controlToken, refreshControlStatus]);
 
   const menuAgents = useMemo(() => {
     const list = snapshot?.agents ?? [];
@@ -486,6 +715,20 @@ function App() {
         </div>
         <DetailPanel agent={selected} />
       </section>
+
+      <ControlConsole
+        observerUrl={observerUrl}
+        selectedAgent={selected}
+        status={controlStatus}
+        token={controlToken}
+        prompt={controlPrompt}
+        controlSession={controlSession}
+        streamError={controlError}
+        onTokenChange={setControlToken}
+        onPromptChange={setControlPrompt}
+        onUnlock={unlockControl}
+        onSend={sendControlPrompt}
+      />
 
       <SessionTimeline events={snapshot?.events ?? []} selectedId={selected?.id} />
 

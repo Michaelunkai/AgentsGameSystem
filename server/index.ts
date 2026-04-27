@@ -3,8 +3,27 @@ import { buildRealmSnapshot } from './realm';
 
 const app = express();
 const port = Number(process.env.AGENT_REALMS_PORT ?? 4387);
+const allowedOrigins = new Set([
+  'https://agentsgamesystem.netlify.app',
+  'http://127.0.0.1:5173',
+  'http://localhost:5173'
+]);
 
 app.use(express.json({ limit: '128kb' }));
+app.use((request, response, next) => {
+  const origin = request.headers.origin;
+  if (origin && (allowedOrigins.has(origin) || origin.endsWith('.trycloudflare.com'))) {
+    response.setHeader('Access-Control-Allow-Origin', origin);
+    response.setHeader('Vary', 'Origin');
+  }
+  response.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (request.method === 'OPTIONS') {
+    response.sendStatus(204);
+    return;
+  }
+  next();
+});
 
 app.get('/api/realm', async (_request, response) => {
   try {
@@ -19,6 +38,14 @@ app.get('/api/realm', async (_request, response) => {
 
 app.get('/api/token-free', (_request, response) => {
   response.json({ ok: true, mode: 'token-free', policy: 'local observation only' });
+});
+
+app.get('/api/health', (_request, response) => {
+  response.json({
+    ok: true,
+    observer: 'agent-realms-windows-observer',
+    generatedAtIso: new Date().toISOString()
+  });
 });
 
 app.listen(port, '127.0.0.1', () => {

@@ -4,6 +4,7 @@ dist/
 .playwright-mcp/
 .agent-realms-dev.log
 .agent-realms-dev.pid
+.agent-realms-live/
 *.tsbuildinfo
 .env
 .env.*

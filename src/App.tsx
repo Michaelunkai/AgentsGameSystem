@@ -6,6 +6,13 @@ import './index.css';
 const statusOrder: AgentStatus[] = ['active', 'waiting', 'blocked', 'failed', 'completed', 'idle', 'sleeping', 'unknown'];
 const githubRepositoryUrl = 'https://github.com/Michaelunkai/AgentsGameSystem';
 
+interface LiveObserverConfig {
+  enabled: boolean;
+  observerUrl?: string;
+  updatedAtIso?: string;
+  note?: string;
+}
+
 function formatDuration(seconds?: number): string {
   if (!seconds) return 'unknown';
   const hours = Math.floor(seconds / 3600);
@@ -136,19 +143,47 @@ function App() {
   const [filter, setFilter] = useState<AgentStatus | 'all'>('all');
   const [paused, setPaused] = useState(false);
   const [error, setError] = useState<string>();
+  const [connectionMode, setConnectionMode] = useState('local observer pending');
   const isLocalObserverHost = ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
+
+  const fetchLiveObserverSnapshot = useCallback(async (): Promise<RealmSnapshot | undefined> => {
+    const configResponse = await fetch(`/live-observer.json?ts=${Date.now()}`, { cache: 'no-store' });
+    if (!configResponse.ok) return undefined;
+    const config = await configResponse.json() as LiveObserverConfig;
+    if (!config.enabled || !config.observerUrl) return undefined;
+    const observerUrl = config.observerUrl.replace(/\/$/, '');
+    const realmResponse = await fetch(`${observerUrl}/api/realm`, { cache: 'no-store' });
+    if (!realmResponse.ok) throw new Error(`live Windows observer returned ${realmResponse.status}`);
+    setConnectionMode(`live Windows observer via ${observerUrl}`);
+    return await realmResponse.json() as RealmSnapshot;
+  }, []);
 
   const refresh = useCallback(async () => {
     if (paused) return;
     if (!isLocalObserverHost) {
-      setSnapshot(staticPreviewSnapshot());
-      setError('Public static preview: run locally for live Windows process discovery.');
+      try {
+        const liveSnapshot = await fetchLiveObserverSnapshot();
+        if (liveSnapshot) {
+          setSnapshot(liveSnapshot);
+          setSelectedId((current) => current ?? liveSnapshot.agents[0]?.id);
+          setError(undefined);
+          return;
+        }
+        setConnectionMode('static preview: no live observer URL configured');
+        setSnapshot(staticPreviewSnapshot());
+        setError('No live Windows observer is configured for this deployment.');
+      } catch (liveError) {
+        setConnectionMode('static preview: live observer unreachable');
+        setError(liveError instanceof Error ? liveError.message : 'live observer unreachable');
+        setSnapshot((current) => current ?? staticPreviewSnapshot());
+      }
       return;
     }
     try {
       const response = await fetch('/api/realm', { cache: 'no-store' });
       if (!response.ok) throw new Error(`observer returned ${response.status}`);
       const data = await response.json() as RealmSnapshot;
+      setConnectionMode('live local Windows observer');
       setSnapshot(data);
       setSelectedId((current) => current ?? data.agents[0]?.id);
       setError(undefined);
@@ -156,7 +191,7 @@ function App() {
       setError(refreshError instanceof Error ? refreshError.message : 'unknown observer failure');
       setSnapshot((current) => current ?? staticPreviewSnapshot());
     }
-  }, [isLocalObserverHost, paused]);
+  }, [fetchLiveObserverSnapshot, isLocalObserverHost, paused]);
 
   useEffect(() => {
     const initial = window.setTimeout(() => void refresh(), 0);
@@ -206,6 +241,7 @@ function App() {
             {statusOrder.map((status) => <option key={status} value={status}>{status}</option>)}
           </select>
         </label>
+        <strong className="connection-mode">{connectionMode}</strong>
         <div className="discovery-notes">
           {(snapshot?.discoveryNotes ?? ['Loading discovery adapters...']).map((note) => <span key={note}>{note}</span>)}
         </div>

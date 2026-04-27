@@ -36,3 +36,15 @@ The runtime proof is visible in the top ribbon. Code-level proof is enforced by 
 Permanent URL: https://agentsgamesystem.netlify.app
 
 The global URL runs as a static preview because a public site cannot inspect private Windows processes. For live local discovery, run `npm run dev` on this PC.
+
+## Live Global Bridge
+
+The Netlify site can show real Windows agents only when this PC exposes the local observer through an HTTPS tunnel. Run:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-live-bridge.ps1
+npm run build
+npx netlify deploy --dir=dist --prod --site 5fb206e9-9b74-45e1-9027-10a03d31f7ae
+```
+
+This updates `public/live-observer.json` with the tunnel URL. A Cloudflare quick tunnel is not permanent; if it restarts, rerun the script and redeploy. A true always-on URL requires a named Cloudflare tunnel credential/service on this PC.

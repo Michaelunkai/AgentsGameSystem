@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { AgentStatus, RealmSnapshot, RpgAgent } from './types';
+import { staticPreviewSnapshot } from './lib/staticPreview';
 import './index.css';
 
 const statusOrder: AgentStatus[] = ['active', 'waiting', 'blocked', 'failed', 'completed', 'idle', 'sleeping', 'unknown'];
@@ -146,6 +147,7 @@ function App() {
       setError(undefined);
     } catch (refreshError) {
       setError(refreshError instanceof Error ? refreshError.message : 'unknown observer failure');
+      setSnapshot((current) => current ?? staticPreviewSnapshot());
     }
   }, [paused]);
 

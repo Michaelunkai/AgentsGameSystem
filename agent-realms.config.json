@@ -1,0 +1,29 @@
+{
+  "agents": [
+    {
+      "id": "codex-home",
+      "name": "Codex Home Forge",
+      "type": "codex",
+      "processMatchers": ["codex"],
+      "paths": ["C:\\Users\\micha\\.codex"],
+      "logPaths": [],
+      "statusEndpoint": "http://127.0.0.1:4387/api/token-free"
+    },
+    {
+      "id": "openclaw-runtime",
+      "name": "OpenClaw Gate Herald",
+      "type": "openclaw",
+      "processMatchers": ["ClawdBotManager", "openclaw"],
+      "paths": ["F:\\study\\AI_ML\\AI_and_Machine_Learning\\Artificial_Intelligence\\openclaw"],
+      "logPaths": []
+    },
+    {
+      "id": "ollama-workbench",
+      "name": "Ollama Crystal Roost",
+      "type": "ollama",
+      "processMatchers": ["ollama"],
+      "paths": ["F:\\study\\AI_ML\\LocalAI\\ollama\\16vram\\A"],
+      "logPaths": []
+    }
+  ]
+}

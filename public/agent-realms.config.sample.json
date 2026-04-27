@@ -1,0 +1,28 @@
+{
+  "agents": [
+    {
+      "id": "local-codex-session",
+      "name": "Codex Forge Captain",
+      "type": "codex",
+      "processMatchers": ["codex"],
+      "paths": ["C:\\Users\\micha\\.codex"],
+      "logPaths": [],
+      "statusEndpoint": "http://127.0.0.1:4387/api/token-free",
+      "parser": {
+        "activePatterns": ["tool_call", "running", "started"],
+        "waitingPatterns": ["approval", "waiting", "input"],
+        "blockedPatterns": ["blocked", "denied"],
+        "failedPatterns": ["error", "failed", "exception"],
+        "completedPatterns": ["complete", "success", "done"]
+      }
+    },
+    {
+      "id": "example-sleeping-agent",
+      "name": "Sleeping Example Traveler",
+      "type": "manual",
+      "processMatchers": [],
+      "paths": ["F:\\path\\to\\local\\agent\\folder"],
+      "logPaths": ["F:\\path\\to\\local\\agent.log"]
+    }
+  ]
+}

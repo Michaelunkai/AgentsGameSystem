@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.vite/
+.playwright-mcp/
+.agent-realms-dev.log
+.agent-realms-dev.pid
+*.tsbuildinfo
+.env
+.env.*
+!.env.example

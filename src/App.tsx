@@ -4,6 +4,7 @@ import { staticPreviewSnapshot } from './lib/staticPreview';
 import './index.css';
 
 const statusOrder: AgentStatus[] = ['active', 'waiting', 'blocked', 'failed', 'completed', 'idle', 'sleeping', 'unknown'];
+const githubRepositoryUrl = 'https://github.com/Michaelunkai/AgentsGameSystem';
 
 function formatDuration(seconds?: number): string {
   if (!seconds) return 'unknown';
@@ -181,6 +182,12 @@ function App() {
           <p className="lede">A living fantasy kingdom mapped from this Windows PC's local agent processes, folders, logs, and loopback services.</p>
         </div>
         <div className="hero-actions">
+          <a className="github-link" href={githubRepositoryUrl} target="_blank" rel="noreferrer" aria-label="Open GitHub repository in a new tab">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 .8a11.2 11.2 0 0 0-3.54 21.83c.56.1.76-.24.76-.54v-2.1c-3.1.67-3.76-1.33-3.76-1.33-.5-1.29-1.24-1.63-1.24-1.63-1.02-.7.08-.69.08-.69 1.13.08 1.72 1.16 1.72 1.16 1 .1 2.63.4 3.2-.77.1-.72.39-1.2.7-1.48-2.47-.28-5.08-1.24-5.08-5.52 0-1.22.43-2.21 1.15-3-.12-.28-.5-1.42.11-2.96 0 0 .94-.3 3.08 1.15a10.6 10.6 0 0 1 5.62 0c2.13-1.45 3.07-1.15 3.07-1.15.61 1.54.23 2.68.11 2.96.72.79 1.15 1.78 1.15 3 0 4.3-2.61 5.23-5.1 5.5.4.35.76 1.03.76 2.08v3.08c0 .3.2.65.77.54A11.2 11.2 0 0 0 12 .8Z" />
+            </svg>
+            <span>GitHub</span>
+          </a>
           <button onClick={() => void refresh()}>Refresh discovery</button>
           <button className={paused ? 'danger' : ''} onClick={() => setPaused((value) => !value)}>{paused ? 'Resume watchers' : 'Pause watchers'}</button>
           <a href="/agent-realms.config.sample.json" target="_blank" rel="noreferrer">Sample config</a>

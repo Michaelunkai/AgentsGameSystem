@@ -46,6 +46,20 @@ button, .hero-actions a {
   transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
 }
 
+.github-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  background: linear-gradient(180deg, rgba(246, 234, 210, 0.18), rgba(30, 22, 16, 0.78));
+}
+
+.github-link svg {
+  width: 1.12rem;
+  height: 1.12rem;
+  fill: currentColor;
+  flex: 0 0 auto;
+}
+
 button:hover, .hero-actions a:hover, button:focus-visible, a:focus-visible {
   transform: translateY(-1px);
   border-color: rgba(239, 210, 154, 0.7);

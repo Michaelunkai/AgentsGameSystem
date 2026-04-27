@@ -37,6 +37,21 @@ const statusAnimation = {
   unknown: 'scouting'
 };
 
+const actionVerbs: Record<AgentSourceType, string> = {
+  codex: 'hammers a brass automaton into code',
+  claude: 'illuminates archive scrolls for another worker',
+  openclaw: 'rings the gate bell and routes bot messages',
+  ollama: 'coils around the GPU mountain and guards local models',
+  browser: 'tracks footprints through live web portals',
+  telegram: 'ferries message scrolls across the harbor',
+  docker: 'tightens container chains in the iron dockyard',
+  powershell: 'casts command glyphs in a terminal circle',
+  node: 'turns clockwork event gears',
+  'local-service': 'guards a local checkpoint',
+  manual: 'follows a named charter',
+  unknown: 'maps a fogbound process trail'
+};
+
 export function stableHash(input: string): number {
   let hash = 2166136261;
   for (const char of input) {
@@ -57,7 +72,8 @@ export function mapSignalToRpg(signal: AgentSignal): RpgAgent {
   const x = 10 + (seed % 78);
   const y = 14 + ((seed >>> 8) % 70);
   const signalPhrase = signal.reasons[0] ?? 'local observation';
-  const quest = `${signal.name} patrols ${base.biome} after ${signalPhrase}.`;
+  const liveAction = signal.liveAction || actionVerbs[signal.type] || actionVerbs.unknown;
+  const quest = `${signal.name} ${liveAction} in ${base.biome} because ${signalPhrase}.`;
 
   return {
     id: signal.id,
@@ -73,6 +89,7 @@ export function mapSignalToRpg(signal: AgentSignal): RpgAgent {
     resourceLabel: base.resource,
     resourceValue,
     quest,
+    liveAction,
     animation: statusAnimation[signal.status],
     territory: {
       title: `${base.biome} Ecosystem`,

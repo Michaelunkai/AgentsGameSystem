@@ -53,6 +53,23 @@ function normalizeStatus(logs: string[], hasProcess: boolean, recentArtifact: bo
   return 'sleeping';
 }
 
+function describeLiveAction(type: AgentSourceType, processName: string, ports: number[]): string {
+  if (ports.length) {
+    return `serving local portal ${ports.join(', ')}`;
+  }
+  const normalized = processName.toLowerCase();
+  if (type === 'codex') return 'forging code and tool calls';
+  if (type === 'claude') return 'copying context runes through a helper service';
+  if (type === 'openclaw') return 'dispatching bot gates and message routes';
+  if (type === 'browser') return normalized.includes('chrome') ? 'scouting browser portals' : 'watching embedded web views';
+  if (type === 'telegram') return 'carrying Telegram messages across the harbor';
+  if (type === 'docker') return 'maintaining container machinery';
+  if (type === 'powershell') return 'guarding a command shell ritual';
+  if (type === 'node') return 'ticking through a JavaScript work loop';
+  if (type === 'ollama') return 'warming local model embers';
+  return 'traveling through an unknown local task';
+}
+
 function uptimeSeconds(start?: string): number | undefined {
   if (!start) return undefined;
   const ms = Date.now() - new Date(start).getTime();
@@ -109,65 +126,31 @@ export async function discoverProcessSignals(): Promise<{ signals: AgentSignal[]
       logSnippets: [],
       artifacts: process.Path ? [redactPathForPublic(process.Path) ?? process.ProcessName] : [],
       reasons: [`${match.label} matched ${process.ProcessName}`, processPorts.length ? `listening on ${processPorts.join(', ')}` : 'process alive without local port'],
-      relationships: processPorts.length ? ['local-service'] : []
+      relationships: processPorts.length ? ['local-service'] : [],
+      liveAction: describeLiveAction(match.type, process.ProcessName, processPorts)
     } satisfies AgentSignal];
   });
   return { signals, notes: [`Process adapter scanned ${processes.length} processes and matched ${signals.length} agent-like surfaces.`] };
 }
 
 export async function discoverFolderSignals(): Promise<{ signals: AgentSignal[]; notes: string[] }> {
-  const now = new Date().toISOString();
   const folders: Array<{ path: string; name: string; type: AgentSourceType }> = [
     { path: 'C:\\Users\\micha\\.codex', name: 'Codex Memory Citadel', type: 'codex' },
     { path: 'C:\\Users\\micha\\.claude', name: 'Claude Archive Annex', type: 'claude' },
     { path: 'F:\\study\\AI_ML\\LocalAI\\ollama\\16vram\\A', name: 'Ollama GPU Mountain', type: 'ollama' },
     { path: 'F:\\study\\AI_ML\\AI_and_Machine_Learning\\Artificial_Intelligence\\openclaw', name: 'OpenClaw Gatehouse', type: 'openclaw' }
   ];
-  const signals = folders.filter((folder) => existsSync(folder.path)).map((folder) => {
-    const fresh = artifactFresh(folder.path);
-    return {
-      id: `folder:${folder.type}:${folder.path.toLowerCase()}`,
-      name: folder.name,
-      type: folder.type,
-      source: 'folder-session-adapter',
-      status: fresh ? 'active' : 'idle',
-      confidence: 0.66,
-      path: redactPathForPublic(folder.path),
-      lastSeenIso: now,
-      lastActivityIso: fresh ? now : undefined,
-      ports: [],
-      logSnippets: [],
-      artifacts: [redactPathForPublic(folder.path) ?? folder.path],
-      reasons: [fresh ? 'recent folder write detected' : 'known agent folder exists'],
-      relationships: []
-    } satisfies AgentSignal;
-  });
-  return { signals, notes: [`Folder adapter checked ${folders.length} known local roots and found ${signals.length}.`] };
+  const found = folders.filter((folder) => existsSync(folder.path)).length;
+  return { signals: [], notes: [`Folder adapter checked ${folders.length} known local roots and found ${found}; folders are context only and are not shown unless backed by a running process.`] };
 }
 
 export async function discoverManualSignals(configs: ManualAgentConfig[]): Promise<{ signals: AgentSignal[]; notes: string[] }> {
-  const now = new Date().toISOString();
-  const signals = await Promise.all(configs.map(async (config) => {
+  await Promise.all(configs.map(async (config) => {
     const snippets = (await Promise.all(config.logPaths.map(readRecentLog))).flat();
     const fresh = config.paths.some(artifactFresh) || config.logPaths.some(artifactFresh);
-    const status = normalizeStatus(snippets, false, fresh);
-    return {
-      id: `manual:${config.id}`,
-      name: config.name,
-      type: config.type as AgentSourceType,
-      source: 'manual-config-adapter',
-      status,
-      confidence: 0.72,
-      lastSeenIso: now,
-      lastActivityIso: fresh ? now : undefined,
-      ports: [],
-      logSnippets: snippets,
-      artifacts: config.paths.map((path) => redactPathForPublic(path) ?? path),
-      reasons: [`manual config ${config.id}`, snippets.length ? 'log parser produced signal' : 'configured without readable recent log'],
-      relationships: config.statusEndpoint ? ['local-http-status'] : []
-    } satisfies AgentSignal;
+    normalizeStatus(snippets, false, fresh);
   }));
-  return { signals, notes: [`Manual config adapter loaded ${signals.length} configured agents.`] };
+  return { signals: [], notes: [`Manual config adapter loaded ${configs.length} definitions; definitions are not shown as agents unless a matching process is running.`] };
 }
 
 export { normalizeStatus };

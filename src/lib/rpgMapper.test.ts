@@ -16,7 +16,8 @@ const baseSignal: AgentSignal = {
   logSnippets: [],
   artifacts: ['C:\\Users\\micha\\.codex'],
   reasons: ['process matcher codex'],
-  relationships: ['node']
+  relationships: ['node'],
+  liveAction: 'forging code and tool calls'
 };
 
 describe('mapSignalToRpg', () => {
@@ -28,6 +29,7 @@ describe('mapSignalToRpg', () => {
     const rpg = mapSignalToRpg(baseSignal);
     expect(rpg.className).toBe('Rune Artificer');
     expect(rpg.biome).toBe('Ember Forge City');
+    expect(rpg.quest).toContain('forging code and tool calls');
     expect(rpg.quest).toContain('process matcher codex');
   });
 });

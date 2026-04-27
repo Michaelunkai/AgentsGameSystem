@@ -358,6 +358,13 @@ select {
   border: 1px solid var(--line);
 }
 
+.live-action {
+  margin: -4px 0 16px;
+  color: #f3c98b;
+  border-left: 3px solid var(--ember);
+  padding: 8px 0 8px 12px;
+}
+
 .meters {
   display: grid;
   gap: 12px;

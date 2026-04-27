@@ -83,6 +83,7 @@ function DetailPanel({ agent }: { agent?: RpgAgent }) {
         </div>
       </div>
       <p className="quest">{agent.quest}</p>
+      <p className="live-action"><strong>Live RPG action:</strong> {agent.liveAction}</p>
       <div className="meters">
         <Meter label="Health" value={agent.health} />
         <Meter label="Signal confidence" value={agent.focus} />

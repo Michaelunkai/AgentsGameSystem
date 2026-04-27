@@ -18,7 +18,8 @@ const previewSignals: AgentSignal[] = [
     logSnippets: [],
     artifacts: ['Run locally to observe C:\\Users\\[user]\\.codex'],
     reasons: ['global static preview cannot inspect private Windows processes'],
-    relationships: []
+    relationships: [],
+    liveAction: 'waits for a live Windows observer bridge'
   },
   {
     id: 'preview:openclaw',
@@ -32,7 +33,8 @@ const previewSignals: AgentSignal[] = [
     logSnippets: [],
     artifacts: ['Run npm run dev on this PC for live discovery'],
     reasons: ['local observer backend is not available on the public static URL'],
-    relationships: []
+    relationships: [],
+    liveAction: 'sleeps until the tunnel returns'
   }
 ];
 

@@ -32,6 +32,7 @@ export interface AgentSignal {
   artifacts: string[];
   reasons: string[];
   relationships: string[];
+  liveAction: string;
 }
 
 export interface RpgAgent {
@@ -48,6 +49,7 @@ export interface RpgAgent {
   resourceLabel: string;
   resourceValue: number;
   quest: string;
+  liveAction: string;
   animation: string;
   territory: {
     title: string;

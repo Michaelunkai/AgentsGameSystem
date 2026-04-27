@@ -33,4 +33,6 @@ The runtime proof is visible in the top ribbon. Code-level proof is enforced by 
 
 ## Global URL
 
-Deployment target: Netlify. The permanent URL is added here after deployment verification.
+Permanent URL: https://agentsgamesystem.netlify.app
+
+The global URL runs as a static preview because a public site cannot inspect private Windows processes. For live local discovery, run `npm run dev` on this PC.

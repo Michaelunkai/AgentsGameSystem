@@ -135,9 +135,15 @@ function App() {
   const [filter, setFilter] = useState<AgentStatus | 'all'>('all');
   const [paused, setPaused] = useState(false);
   const [error, setError] = useState<string>();
+  const isLocalObserverHost = ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
 
   const refresh = useCallback(async () => {
     if (paused) return;
+    if (!isLocalObserverHost) {
+      setSnapshot(staticPreviewSnapshot());
+      setError('Public static preview: run locally for live Windows process discovery.');
+      return;
+    }
     try {
       const response = await fetch('/api/realm', { cache: 'no-store' });
       if (!response.ok) throw new Error(`observer returned ${response.status}`);
@@ -149,7 +155,7 @@ function App() {
       setError(refreshError instanceof Error ? refreshError.message : 'unknown observer failure');
       setSnapshot((current) => current ?? staticPreviewSnapshot());
     }
-  }, [paused]);
+  }, [isLocalObserverHost, paused]);
 
   useEffect(() => {
     const initial = window.setTimeout(() => void refresh(), 0);

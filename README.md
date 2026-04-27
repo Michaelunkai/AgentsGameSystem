@@ -4,6 +4,8 @@ Agent Realms is a local-only RPG operations map for this Windows PC. It observes
 
 The live UI is built around a Moonlit Operations Map: the left rail lists every currently running detected agent/session, the central map groups them into decluttered RPG ecosystems, and the detail panel updates with that agent's live status, process evidence, progress-like RPG action, uptime, ports, redacted local conversation excerpts when available, redacted log snippets, and classification reasons.
 
+The live bridge exposes `/api/realm/stream` as a local-first Server-Sent Events stream and falls back to polling if a browser or tunnel cannot keep the stream open. This keeps the global view close to real time while preserving the token-free rule.
+
 Normal operation consumes zero hosted model tokens. The app does not include OpenAI, Anthropic, Gemini, Groq, OpenRouter, hosted LangChain model clients, or browser-chat automation. The backend reads local process metadata, local folders, optional local logs, and localhost-only status endpoints. RPG classes, quests, events, and character state are deterministic templates.
 
 ## Run Locally

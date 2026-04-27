@@ -563,19 +563,24 @@ code {
   overflow-wrap: anywhere;
 }
 
-.event-history {
+.session-timeline, .event-history {
   margin-top: 16px;
   padding: 22px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(18px);
+  border-radius: 28px;
 }
 
-.event-list {
+.timeline-rail, .event-list {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 12px;
   margin-top: 14px;
 }
 
-.event-list article {
+.timeline-rail article, .event-list article {
   border: 1px solid var(--line);
   border-radius: 18px;
   padding: 14px;
@@ -583,13 +588,34 @@ code {
   animation: reveal 420ms ease both;
 }
 
-.event-list time {
+.timeline-rail time, .event-list time {
   display: block;
   color: var(--muted);
   font-size: 0.8rem;
 }
 
-.event-list p { color: var(--muted); }
+.timeline-rail p, .event-list p { color: var(--muted); }
+
+.replay-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 12px 0 16px;
+}
+
+.replay-stats span {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 10px;
+  color: var(--muted);
+  background: rgba(185, 230, 255, 0.06);
+}
+
+.replay-stats strong {
+  display: block;
+  color: var(--ink);
+  font: 800 1.25rem/1 Fraunces, Georgia, serif;
+}
 
 .error-banner, .guided-setup {
   border: 1px solid rgba(255, 111, 97, 0.5);

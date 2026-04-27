@@ -1,23 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { AgentStatus, RealmSnapshot, RpgAgent } from './types';
+import type { AgentStatus, RealmEvent, RealmSnapshot, RpgAgent } from './types';
 import { staticPreviewSnapshot } from './lib/staticPreview';
 import './index.css';
 
 const statusOrder: AgentStatus[] = ['active', 'waiting', 'blocked', 'failed', 'completed', 'idle', 'sleeping', 'unknown'];
 const githubRepositoryUrl = 'https://github.com/Michaelunkai/AgentsGameSystem';
 const liveRefreshMs = 4000;
+const streamRefreshMs = 2500;
 
 interface LiveObserverConfig {
   enabled: boolean;
   observerUrl?: string;
-  updatedAtIso?: string;
-  note?: string;
 }
 
 interface AgentCluster {
   key: string;
   title: string;
-  biome: string;
   glyph: string;
   agents: RpgAgent[];
   activeCount: number;
@@ -43,35 +41,35 @@ function formatFreshness(iso?: string): string {
 
 function Glyph({ portrait }: { portrait: string }) {
   const glyphs: Record<string, string> = {
-    hammer: '⚒',
-    scroll: '§',
-    horn: '◈',
-    dragon: '♜',
-    compass: '⌖',
-    lyre: '♫',
-    anvil: '⬢',
-    wand: '✦',
-    gear: '⚙',
-    shield: '⬟',
-    banner: '⚑',
-    lantern: '◌'
+    hammer: 'HF',
+    scroll: 'SC',
+    horn: 'HG',
+    dragon: 'DR',
+    compass: 'RG',
+    lyre: 'BD',
+    anvil: 'AN',
+    wand: 'PW',
+    gear: 'ND',
+    shield: 'WD',
+    banner: 'BN',
+    lantern: 'TR'
   };
-  return <span aria-hidden="true">{glyphs[portrait] ?? '◆'}</span>;
+  return <span aria-hidden="true">{glyphs[portrait] ?? 'AG'}</span>;
 }
 
-const clusterPositions: Record<string, Pick<AgentCluster, 'title' | 'biome' | 'glyph' | 'x' | 'y'>> = {
-  codex: { title: 'Codex Forge Circle', biome: 'Silver Forge City', glyph: '⚒', x: 23, y: 58 },
-  claude: { title: 'Claude Archive Choir', biome: 'Moonlit Archive', glyph: '§', x: 68, y: 24 },
-  openclaw: { title: 'OpenClaw Herald Gate', biome: 'Signal Harbor', glyph: '◈', x: 79, y: 66 },
-  ollama: { title: 'Ollama Dragon Peak', biome: 'GPU Crystal Mountain', glyph: '♜', x: 45, y: 18 },
-  browser: { title: 'Browser Ranger Watch', biome: 'Portal Canopy', glyph: '⌖', x: 37, y: 76 },
-  telegram: { title: 'Telegram Horn Tower', biome: 'Message Coast', glyph: '⚑', x: 88, y: 42 },
-  docker: { title: 'Docker Brass Docks', biome: 'Container Harbor', glyph: '⬢', x: 57, y: 82 },
-  powershell: { title: 'PowerShell Rune Hall', biome: 'Command Citadel', glyph: '✦', x: 15, y: 31 },
-  node: { title: 'Node Clockwork Grove', biome: 'Service Grove', glyph: '⚙', x: 55, y: 49 },
-  'local-service': { title: 'Local Service Bastion', biome: 'Loopback Keep', glyph: '⬟', x: 72, y: 51 },
-  manual: { title: 'Manual Charter Camp', biome: 'Charter Field', glyph: '◌', x: 28, y: 20 },
-  unknown: { title: 'Unknown Traveler Road', biome: 'Fog Road', glyph: '◆', x: 50, y: 62 }
+const clusterPositions: Record<string, Omit<AgentCluster, 'key' | 'agents' | 'activeCount' | 'dangerCount'>> = {
+  codex: { title: 'Codex Forge Circle', glyph: 'HF', x: 23, y: 58 },
+  claude: { title: 'Claude Archive Choir', glyph: 'SC', x: 68, y: 24 },
+  openclaw: { title: 'OpenClaw Herald Gate', glyph: 'HG', x: 79, y: 66 },
+  ollama: { title: 'Ollama Dragon Peak', glyph: 'DR', x: 45, y: 18 },
+  browser: { title: 'Browser Ranger Watch', glyph: 'RG', x: 37, y: 76 },
+  telegram: { title: 'Telegram Horn Tower', glyph: 'BN', x: 88, y: 42 },
+  docker: { title: 'Docker Brass Docks', glyph: 'AN', x: 57, y: 82 },
+  powershell: { title: 'PowerShell Rune Hall', glyph: 'PW', x: 15, y: 31 },
+  node: { title: 'Node Clockwork Grove', glyph: 'ND', x: 55, y: 49 },
+  'local-service': { title: 'Local Service Bastion', glyph: 'WD', x: 72, y: 51 },
+  manual: { title: 'Manual Charter Camp', glyph: 'BN', x: 28, y: 20 },
+  unknown: { title: 'Unknown Traveler Road', glyph: 'AG', x: 50, y: 62 }
 };
 
 function buildClusters(agents: RpgAgent[]): AgentCluster[] {
@@ -81,28 +79,17 @@ function buildClusters(agents: RpgAgent[]): AgentCluster[] {
     groups.set(key, [...(groups.get(key) ?? []), agent]);
   });
   return Array.from(groups.entries())
-    .map(([key, clusterAgents]) => {
-      const defaults = clusterPositions[key];
-      return {
-        key,
-        ...defaults,
-        agents: clusterAgents,
-        activeCount: clusterAgents.filter((agent) => agent.status === 'active').length,
-        dangerCount: clusterAgents.filter((agent) => agent.status === 'blocked' || agent.status === 'failed').length
-      };
-    })
+    .map(([key, clusterAgents]) => ({
+      key,
+      ...clusterPositions[key],
+      agents: clusterAgents,
+      activeCount: clusterAgents.filter((agent) => agent.status === 'active').length,
+      dangerCount: clusterAgents.filter((agent) => agent.status === 'blocked' || agent.status === 'failed').length
+    }))
     .sort((left, right) => right.agents.length - left.agents.length);
 }
 
-function ClusterNode({
-  cluster,
-  selected,
-  onSelect
-}: {
-  cluster: AgentCluster;
-  selected: boolean;
-  onSelect: (cluster: AgentCluster) => void;
-}) {
+function ClusterNode({ cluster, selected, onSelect }: { cluster: AgentCluster; selected: boolean; onSelect: (cluster: AgentCluster) => void }) {
   const aura = cluster.dangerCount ? 'danger' : cluster.activeCount ? 'active' : 'quiet';
   return (
     <button
@@ -133,7 +120,7 @@ function DetailPanel({ agent }: { agent?: RpgAgent }) {
     return (
       <aside className="detail-panel empty-state">
         <h2>No traveler selected</h2>
-        <p>Choose a realm character to inspect its source adapter, status reasoning, redacted logs, and local work artifacts.</p>
+        <p>Choose a running agent to inspect status reasoning, redacted transcript excerpts, logs, and local artifacts.</p>
       </aside>
     );
   }
@@ -150,6 +137,11 @@ function DetailPanel({ agent }: { agent?: RpgAgent }) {
       </div>
       <p className="quest">{agent.quest}</p>
       <p className="live-action"><strong>Live RPG action:</strong> {agent.liveAction}</p>
+      <div className="replay-stats">
+        <span><strong>{agent.signal.conversationSnippets.length}</strong> transcript lines</span>
+        <span><strong>{agent.signal.reasons.length}</strong> classification signals</span>
+        <span><strong>{agent.signal.artifacts.length}</strong> local artifacts</span>
+      </div>
       <div className="meters">
         <Meter label="Health" value={agent.health} />
         <Meter label="Signal confidence" value={agent.focus} />
@@ -242,7 +234,7 @@ function AgentMenu({
             <span className={`mini-orb ${agent.aura}`}><Glyph portrait={agent.portrait} /></span>
             <span>
               <strong>{agent.name}</strong>
-              <em>{agent.className} · {agent.signal.processName ?? agent.type}</em>
+              <em>{agent.className} - {agent.signal.processName ?? agent.type}</em>
               <small>{agent.liveAction}</small>
             </span>
             <i>{agent.status}</i>
@@ -277,6 +269,28 @@ function TokenFreeRibbon({ snapshot }: { snapshot?: RealmSnapshot }) {
   );
 }
 
+function SessionTimeline({ events, selectedId }: { events: RealmEvent[]; selectedId?: string }) {
+  const selectedEvents = events.filter((event) => !selectedId || event.agentId === selectedId).slice(0, 8);
+  return (
+    <section className="session-timeline" aria-label="Selected agent live timeline">
+      <div>
+        <p className="eyebrow">Live Replay Trail</p>
+        <h2>Signals, events, and transcript echoes</h2>
+      </div>
+      <div className="timeline-rail">
+        {selectedEvents.map((event) => (
+          <article key={event.id} className={event.severity}>
+            <time>{new Date(event.atIso).toLocaleTimeString()}</time>
+            <strong>{event.title}</strong>
+            <p>{event.detail}</p>
+          </article>
+        ))}
+        {!selectedEvents.length && <article><strong>No selected-agent events yet.</strong><p>The stream is waiting for fresh local signals.</p></article>}
+      </div>
+    </section>
+  );
+}
+
 function App() {
   const [snapshot, setSnapshot] = useState<RealmSnapshot>();
   const [selectedId, setSelectedId] = useState<string>();
@@ -285,54 +299,86 @@ function App() {
   const [paused, setPaused] = useState(false);
   const [error, setError] = useState<string>();
   const [connectionMode, setConnectionMode] = useState('local observer pending');
+  const [streamMode, setStreamMode] = useState<'connecting' | 'streaming' | 'polling' | 'paused'>('connecting');
   const isLocalObserverHost = ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
 
-  const fetchLiveObserverSnapshot = useCallback(async (): Promise<RealmSnapshot | undefined> => {
+  const applyLiveSnapshot = useCallback((liveSnapshot: RealmSnapshot, mode: string) => {
+    setConnectionMode(mode);
+    setSnapshot(liveSnapshot);
+    setSelectedId((current) => liveSnapshot.agents.some((agent) => agent.id === current) ? current : liveSnapshot.agents[0]?.id);
+    setError(undefined);
+  }, []);
+
+  const readLiveObserverUrl = useCallback(async (): Promise<string | undefined> => {
+    if (isLocalObserverHost) return '';
     const configResponse = await fetch(`/live-observer.json?ts=${Date.now()}`, { cache: 'no-store' });
     if (!configResponse.ok) return undefined;
     const config = await configResponse.json() as LiveObserverConfig;
-    if (!config.enabled || !config.observerUrl) return undefined;
-    const observerUrl = config.observerUrl.replace(/\/$/, '');
-    const realmResponse = await fetch(`${observerUrl}/api/realm`, { cache: 'no-store' });
-    if (!realmResponse.ok) throw new Error(`live Windows observer returned ${realmResponse.status}`);
-    setConnectionMode(`live Windows observer via ${observerUrl}`);
-    return await realmResponse.json() as RealmSnapshot;
-  }, []);
+    return config.enabled && config.observerUrl ? config.observerUrl.replace(/\/$/, '') : undefined;
+  }, [isLocalObserverHost]);
 
   const refresh = useCallback(async () => {
-    if (paused) return;
-    if (!isLocalObserverHost) {
-      try {
-        const liveSnapshot = await fetchLiveObserverSnapshot();
-        if (liveSnapshot) {
-          setSnapshot(liveSnapshot);
-          setSelectedId((current) => liveSnapshot.agents.some((agent) => agent.id === current) ? current : liveSnapshot.agents[0]?.id);
-          setError(undefined);
-          return;
-        }
+    if (paused || streamMode === 'streaming') return;
+    try {
+      const observerUrl = await readLiveObserverUrl();
+      if (observerUrl === undefined) {
         setConnectionMode('static preview: no live observer URL configured');
         setSnapshot(staticPreviewSnapshot());
         setError('No live Windows observer is configured for this deployment.');
-      } catch (liveError) {
-        setConnectionMode('static preview: live observer unreachable');
-        setError(liveError instanceof Error ? liveError.message : 'live observer unreachable');
-        setSnapshot((current) => current ?? staticPreviewSnapshot());
+        return;
       }
-      return;
-    }
-    try {
-      const response = await fetch('/api/realm', { cache: 'no-store' });
+      const endpoint = observerUrl ? `${observerUrl}/api/realm` : '/api/realm';
+      const response = await fetch(endpoint, { cache: 'no-store' });
       if (!response.ok) throw new Error(`observer returned ${response.status}`);
       const data = await response.json() as RealmSnapshot;
-      setConnectionMode('live local Windows observer');
-      setSnapshot(data);
-      setSelectedId((current) => data.agents.some((agent) => agent.id === current) ? current : data.agents[0]?.id);
-      setError(undefined);
+      applyLiveSnapshot(data, observerUrl ? `live polling via ${observerUrl}` : 'live local polling');
+      setStreamMode((current) => current === 'streaming' ? current : 'polling');
     } catch (refreshError) {
+      setStreamMode('polling');
       setError(refreshError instanceof Error ? refreshError.message : 'unknown observer failure');
       setSnapshot((current) => current ?? staticPreviewSnapshot());
     }
-  }, [fetchLiveObserverSnapshot, isLocalObserverHost, paused]);
+  }, [applyLiveSnapshot, paused, readLiveObserverUrl, streamMode]);
+
+  useEffect(() => {
+    if (paused || typeof EventSource === 'undefined') {
+      return undefined;
+    }
+
+    let eventSource: EventSource | undefined;
+    let cancelled = false;
+
+    const openStream = async () => {
+      try {
+        const observerUrl = await readLiveObserverUrl();
+        if (observerUrl === undefined || cancelled) {
+          setStreamMode('polling');
+          return;
+        }
+        eventSource = new EventSource(`${observerUrl}/api/realm/stream`);
+        eventSource.addEventListener('open', () => setStreamMode('streaming'));
+        eventSource.addEventListener('realm', (event) => {
+          const nextSnapshot = JSON.parse((event as MessageEvent<string>).data) as RealmSnapshot;
+          applyLiveSnapshot(nextSnapshot, observerUrl ? `live SSE stream via ${observerUrl}` : 'live local SSE stream');
+          setStreamMode('streaming');
+        });
+        eventSource.addEventListener('observer-error', (event) => {
+          const detail = JSON.parse((event as MessageEvent<string>).data) as { detail?: string };
+          setError(detail.detail ?? 'observer stream error');
+        });
+        eventSource.addEventListener('error', () => setStreamMode('polling'));
+      } catch (streamError) {
+        setStreamMode('polling');
+        setError(streamError instanceof Error ? streamError.message : 'stream unavailable');
+      }
+    };
+
+    void openStream();
+    return () => {
+      cancelled = true;
+      eventSource?.close();
+    };
+  }, [applyLiveSnapshot, paused, readLiveObserverUrl]);
 
   useEffect(() => {
     const initial = window.setTimeout(() => void refresh(), 0);
@@ -352,8 +398,10 @@ function App() {
       return matchesStatus && (!normalizedSearch || haystack.includes(normalizedSearch));
     });
   }, [snapshot, filter, search]);
+
   const clusters = useMemo(() => buildClusters(agents), [agents]);
   const selected = snapshot?.agents.find((agent) => agent.id === selectedId) ?? agents[0];
+  const visibleStreamMode = paused ? 'paused' : streamMode;
 
   return (
     <main className="app-shell">
@@ -361,7 +409,7 @@ function App() {
         <div>
           <p className="eyebrow">Local AI Workforce RPG</p>
           <h1>Agent Realms</h1>
-          <p className="lede">A living fantasy kingdom mapped from this Windows PC's local agent processes, folders, logs, and loopback services.</p>
+          <p className="lede">A living fantasy kingdom mapped from this Windows PC's local agent processes, folders, logs, transcripts, and loopback services.</p>
         </div>
         <div className="hero-actions">
           <a className="github-link" href={githubRepositoryUrl} target="_blank" rel="noreferrer" aria-label="Open GitHub repository in a new tab">
@@ -377,13 +425,12 @@ function App() {
       </header>
 
       <TokenFreeRibbon snapshot={snapshot} />
-
       {error && <div className="error-banner">Observer issue: {error}. The realm remains available with the last successful state.</div>}
 
       <section className="control-bar">
         <div className="live-metrics" aria-label="Live observer status">
           <strong>{snapshot?.agents.length ?? 0}</strong>
-          <span>currently running agents · refresh every {liveRefreshMs / 1000}s · last pulse {formatFreshness(snapshot?.generatedAtIso)}</span>
+          <span>currently running agents - {visibleStreamMode === 'streaming' ? `SSE stream every ${streamRefreshMs / 1000}s` : `${visibleStreamMode} polling every ${liveRefreshMs / 1000}s`} - last pulse {formatFreshness(snapshot?.generatedAtIso)}</span>
         </div>
         <strong className="connection-mode">{connectionMode}</strong>
         <div className="discovery-notes">
@@ -392,16 +439,7 @@ function App() {
       </section>
 
       <section className="realm-layout">
-        <AgentMenu
-          agents={agents}
-          selectedId={selected?.id}
-          search={search}
-          onSearch={setSearch}
-          filter={filter}
-          onFilter={setFilter}
-          onSelect={setSelectedId}
-        />
-
+        <AgentMenu agents={agents} selectedId={selected?.id} search={search} onSearch={setSearch} filter={filter} onFilter={setFilter} onSelect={setSelectedId} />
         <div className="map-panel">
           <div className="map-header">
             <div>
@@ -427,21 +465,22 @@ function App() {
                 onSelect={(selectedCluster) => setSelectedId(selectedCluster.agents[0]?.id)}
               />
             ))}
-            {!agents.length && <div className="guided-setup">Add manual agents in <code>agent-realms.config.json</code> or start local tools; missing sources become sleeping travelers instead of crashes.</div>}
+            {!agents.length && <div className="guided-setup">Start local tools or run the live bridge; stopped/config-only sources stay hidden so the realm shows only running agents.</div>}
           </div>
           <div className="ecosystem-strip">
             {clusters.map((cluster) => (
               <button key={cluster.key} className={cluster.agents.some((agent) => agent.id === selected?.id) ? 'active' : ''} onClick={() => setSelectedId(cluster.agents[0]?.id)}>
                 <span>{cluster.glyph}</span>
                 <strong>{cluster.title}</strong>
-                <em>{cluster.agents.length} running · {cluster.activeCount} active</em>
+                <em>{cluster.agents.length} running - {cluster.activeCount} active</em>
               </button>
             ))}
           </div>
         </div>
-
         <DetailPanel agent={selected} />
       </section>
+
+      <SessionTimeline events={snapshot?.events ?? []} selectedId={selected?.id} />
 
       <section className="event-history">
         <div>

@@ -36,6 +36,38 @@ app.get('/api/realm', async (_request, response) => {
   }
 });
 
+app.get('/api/realm/stream', async (request, response) => {
+  response.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no'
+  });
+
+  let closed = false;
+  request.on('close', () => {
+    closed = true;
+  });
+
+  const sendSnapshot = async () => {
+    if (closed) return;
+    try {
+      const snapshot = await buildRealmSnapshot();
+      response.write(`event: realm\n`);
+      response.write(`data: ${JSON.stringify(snapshot)}\n\n`);
+    } catch (error) {
+      response.write(`event: observer-error\n`);
+      response.write(`data: ${JSON.stringify({ detail: error instanceof Error ? error.message : 'unknown discovery error' })}\n\n`);
+    }
+  };
+
+  await sendSnapshot();
+  const timer = setInterval(() => void sendSnapshot(), 2500);
+  request.on('close', () => {
+    clearInterval(timer);
+  });
+});
+
 app.get('/api/token-free', (_request, response) => {
   response.json({ ok: true, mode: 'token-free', policy: 'local observation only' });
 });

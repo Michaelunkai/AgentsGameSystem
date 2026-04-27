@@ -179,6 +179,14 @@ function DetailPanel({ agent }: { agent?: RpgAgent }) {
         </ul>
       </section>
       <section>
+        <h3>Live Conversation / Progress Feed</h3>
+        <div className="conversation-box">
+          {agent.signal.conversationSnippets.length
+            ? agent.signal.conversationSnippets.map((line, index) => <code key={`${index}-${line}`}>{line}</code>)
+            : <code>No readable local transcript source was found for this running agent. The observer will not invent conversation text.</code>}
+        </div>
+      </section>
+      <section>
         <h3>Recent Redacted Log Lines</h3>
         <div className="log-box">
           {agent.signal.logSnippets.length ? agent.signal.logSnippets.map((line) => <code key={line}>{line}</code>) : <code>No readable configured log snippet.</code>}

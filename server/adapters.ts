@@ -1,5 +1,6 @@
-import { existsSync, statSync } from 'node:fs';
+import { closeSync, existsSync, openSync, readSync, readdirSync, statSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { AgentSignal, AgentSourceType, AgentStatus } from '../src/types';
@@ -12,6 +13,7 @@ interface ProcessRow {
   Id: number;
   ProcessName: string;
   Path?: string;
+  CommandLine?: string;
   StartTime?: string;
 }
 
@@ -77,9 +79,15 @@ function uptimeSeconds(start?: string): number | undefined {
 }
 
 async function readProcesses(): Promise<ProcessRow[]> {
-  const command = 'Get-Process | Select-Object Id,ProcessName,Path,StartTime -ErrorAction SilentlyContinue | ConvertTo-Json -Depth 3';
+  const command = 'Get-CimInstance Win32_Process | Select-Object @{Name="Id";Expression={$_.ProcessId}},@{Name="ProcessName";Expression={$_.Name}},Path,CommandLine,CreationDate | ConvertTo-Json -Depth 3';
   const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-Command', command], { timeout: 15000, windowsHide: true });
-  return parseJsonArray<ProcessRow>(stdout);
+  return parseJsonArray<ProcessRow & { CreationDate?: string }>(stdout).map((process) => ({
+    Id: process.Id,
+    ProcessName: process.ProcessName,
+    Path: process.Path,
+    CommandLine: process.CommandLine,
+    StartTime: process.CreationDate
+  }));
 }
 
 async function readPorts(): Promise<PortRow[]> {
@@ -102,14 +110,88 @@ function artifactFresh(path: string): boolean {
   return Date.now() - stat.mtimeMs < 1000 * 60 * 30;
 }
 
+function readNewestFiles(root: string, maxFiles: number): string[] {
+  if (!existsSync(root)) return [];
+  const files: Array<{ path: string; mtime: number; size: number }> = [];
+  const visit = (folder: string) => {
+    for (const entry of readdirSync(folder, { withFileTypes: true })) {
+      const fullPath = path.join(folder, entry.name);
+      if (entry.isDirectory()) {
+        visit(fullPath);
+        continue;
+      }
+      if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue;
+      const stat = statSync(fullPath);
+      if (stat.size > 0) files.push({ path: fullPath, mtime: stat.mtimeMs, size: stat.size });
+    }
+  };
+  visit(root);
+  return files.sort((left, right) => right.mtime - left.mtime).slice(0, maxFiles).map((file) => file.path);
+}
+
+function extractMessageText(payload: unknown): string | undefined {
+  if (!payload || typeof payload !== 'object') return undefined;
+  const item = payload as { type?: string; role?: string; content?: Array<{ type?: string; text?: string }> };
+  if (item.type !== 'message' || !item.role) return undefined;
+  const text = item.content?.map((part) => part.text).filter(Boolean).join('\n').trim();
+  if (!text) return undefined;
+  return `${item.role}: ${redactSecretText(text).replace(/\s+/g, ' ').slice(0, 900)}`;
+}
+
+function extractEventText(payload: unknown): string | undefined {
+  if (!payload || typeof payload !== 'object') return undefined;
+  const event = payload as { message?: string; msg?: string; text?: string };
+  const text = event.message ?? event.msg ?? event.text;
+  if (!text) return undefined;
+  return `event: ${redactSecretText(text).replace(/\s+/g, ' ').slice(0, 500)}`;
+}
+
+async function readCodexConversationSnippets(): Promise<string[]> {
+  const roots = [
+    'C:\\Users\\micha\\.codex\\sessions',
+    'C:\\Users\\micha\\.codex\\history.jsonl'
+  ];
+  const sessionFiles = readNewestFiles(roots[0], 3);
+  const files = [...sessionFiles, roots[1]].filter((file) => existsSync(file));
+  const snippets: string[] = [];
+  for (const file of files) {
+    const stat = statSync(file);
+    const byteCount = Math.min(stat.size, 500_000);
+    const buffer = Buffer.alloc(byteCount);
+    const fd = openSync(file, 'r');
+    readSync(fd, buffer, 0, byteCount, stat.size - byteCount);
+    closeSync(fd);
+    const raw = buffer.toString('utf8');
+    const lines = raw.split(/\r?\n/).filter(Boolean).slice(-500);
+    for (const line of lines) {
+      try {
+        const entry = JSON.parse(line) as { type?: string; payload?: unknown; text?: string };
+        const text = entry.type === 'response_item'
+          ? extractMessageText(entry.payload)
+          : entry.type === 'event_msg'
+            ? extractEventText(entry.payload)
+            : entry.text
+              ? `history: ${redactSecretText(entry.text).replace(/\s+/g, ' ').slice(0, 500)}`
+              : undefined;
+        if (text) snippets.push(text);
+      } catch {
+        continue;
+      }
+    }
+  }
+  return Array.from(new Set(snippets)).slice(-24);
+}
+
 export async function discoverProcessSignals(): Promise<{ signals: AgentSignal[]; notes: string[] }> {
   const now = new Date().toISOString();
-  const [processes, ports] = await Promise.all([readProcesses(), readPorts()]);
+  const [processes, ports, codexConversationSnippets] = await Promise.all([readProcesses(), readPorts(), readCodexConversationSnippets()]);
   const signals = processes.flatMap((process) => {
-    const sourceText = `${process.ProcessName} ${process.Path ?? ''}`;
+    const sourceText = `${process.ProcessName} ${process.Path ?? ''} ${process.CommandLine ?? ''}`;
     const match = matcherTypes.find((entry) => entry.pattern.test(sourceText));
     if (!match) return [];
     const processPorts = ports.filter((port) => port.OwningProcess === process.Id).map((port) => port.LocalPort);
+    const redactedCommandLine = redactPathForPublic(process.CommandLine);
+    const redactedPath = redactPathForPublic(process.Path);
     return [{
       id: `process:${match.type}:${process.Id}`,
       name: `${match.type === 'node' ? 'Node Worker' : match.label.replace(' process', '')} ${process.Id}`,
@@ -119,13 +201,14 @@ export async function discoverProcessSignals(): Promise<{ signals: AgentSignal[]
       confidence: 0.78,
       pid: process.Id,
       processName: process.ProcessName,
-      path: redactPathForPublic(process.Path),
+      path: redactedPath,
       uptimeSeconds: uptimeSeconds(process.StartTime),
       lastSeenIso: now,
       ports: processPorts,
       logSnippets: [],
-      artifacts: process.Path ? [redactPathForPublic(process.Path) ?? process.ProcessName] : [],
-      reasons: [`${match.label} matched ${process.ProcessName}`, processPorts.length ? `listening on ${processPorts.join(', ')}` : 'process alive without local port'],
+      conversationSnippets: match.type === 'codex' ? codexConversationSnippets : [],
+      artifacts: [redactedPath, redactedCommandLine].filter(Boolean) as string[],
+      reasons: [`${match.label} matched ${process.ProcessName}${process.CommandLine ? ' command line' : ''}`, processPorts.length ? `listening on ${processPorts.join(', ')}` : 'process alive without local port'],
       relationships: processPorts.length ? ['local-service'] : [],
       liveAction: describeLiveAction(match.type, process.ProcessName, processPorts)
     } satisfies AgentSignal];

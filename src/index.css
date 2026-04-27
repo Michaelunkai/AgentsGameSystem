@@ -537,7 +537,7 @@ input::placeholder { color: rgba(157, 179, 199, 0.68); }
   overflow-wrap: anywhere;
 }
 
-.log-box {
+.log-box, .conversation-box {
   display: grid;
   gap: 6px;
   max-height: 180px;
@@ -546,6 +546,15 @@ input::placeholder { color: rgba(157, 179, 199, 0.68); }
   border-radius: 16px;
   padding: 12px;
   background: rgba(0, 0, 0, 0.2);
+}
+
+.conversation-box {
+  max-height: 300px;
+}
+
+.conversation-box code {
+  border-left: 2px solid rgba(185, 230, 255, 0.28);
+  padding-left: 9px;
 }
 
 code {

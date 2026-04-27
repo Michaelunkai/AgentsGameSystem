@@ -1,6 +1,6 @@
 ﻿{
     "enabled":  true,
-    "observerUrl":  "https://telecommunications-collections-volunteer-exemption.trycloudflare.com",
-    "updatedAtIso":  "2026-04-27T20:26:59.6863932Z",
+    "observerUrl":  "https://constitution-borough-whenever-summer.trycloudflare.com",
+    "updatedAtIso":  "2026-04-27T20:51:09.3437774Z",
     "note":  "Live bridge to this Windows PC. Requires the local observer and cloudflared processes to keep running."
 }

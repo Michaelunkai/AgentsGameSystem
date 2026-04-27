@@ -14,6 +14,7 @@ const baseSignal: AgentSignal = {
   lastSeenIso: '2026-04-27T19:00:00.000Z',
   ports: [],
   logSnippets: [],
+  conversationSnippets: [],
   artifacts: ['C:\\Users\\micha\\.codex'],
   reasons: ['process matcher codex'],
   relationships: ['node'],

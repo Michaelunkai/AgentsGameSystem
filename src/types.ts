@@ -29,6 +29,7 @@ export interface AgentSignal {
   lastActivityIso?: string;
   ports: number[];
   logSnippets: string[];
+  conversationSnippets: string[];
   artifacts: string[];
   reasons: string[];
   relationships: string[];

@@ -23,6 +23,12 @@ interface PortRow {
   OwningProcess: number;
 }
 
+interface CodexSessionIndexRow {
+  id: string;
+  thread_name?: string;
+  updated_at?: string;
+}
+
 const matcherTypes: Array<{ pattern: RegExp; type: AgentSourceType; label: string }> = [
   { pattern: /codex/i, type: 'codex', label: 'Codex CLI process' },
   { pattern: /claude|cowork/i, type: 'claude', label: 'Claude helper process' },
@@ -129,6 +135,26 @@ function readNewestFiles(root: string, maxFiles: number): string[] {
   return files.sort((left, right) => right.mtime - left.mtime).slice(0, maxFiles).map((file) => file.path);
 }
 
+function readNewestSessionFiles(root: string, maxFiles: number, activeWindowMs: number): string[] {
+  if (!existsSync(root)) return [];
+  const cutoff = Date.now() - activeWindowMs;
+  const files: Array<{ path: string; mtime: number; size: number }> = [];
+  const visit = (folder: string) => {
+    for (const entry of readdirSync(folder, { withFileTypes: true })) {
+      const fullPath = path.join(folder, entry.name);
+      if (entry.isDirectory()) {
+        visit(fullPath);
+        continue;
+      }
+      if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue;
+      const stat = statSync(fullPath);
+      if (stat.size > 0 && stat.mtimeMs >= cutoff) files.push({ path: fullPath, mtime: stat.mtimeMs, size: stat.size });
+    }
+  };
+  visit(root);
+  return files.sort((left, right) => right.mtime - left.mtime).slice(0, maxFiles).map((file) => file.path);
+}
+
 function extractMessageText(payload: unknown): string | undefined {
   if (!payload || typeof payload !== 'object') return undefined;
   const item = payload as { type?: string; role?: string; content?: Array<{ type?: string; text?: string }> };
@@ -180,6 +206,95 @@ async function readCodexConversationSnippets(): Promise<string[]> {
     }
   }
   return Array.from(new Set(snippets)).slice(-24);
+}
+
+function tailFile(file: string, maxBytes: number): string[] {
+  const stat = statSync(file);
+  const byteCount = Math.min(stat.size, maxBytes);
+  const buffer = Buffer.alloc(byteCount);
+  const fd = openSync(file, 'r');
+  readSync(fd, buffer, 0, byteCount, stat.size - byteCount);
+  closeSync(fd);
+  return buffer.toString('utf8').split(/\r?\n/).filter(Boolean);
+}
+
+function sessionIdFromPath(file: string): string {
+  const basename = path.basename(file, '.jsonl');
+  const match = basename.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i);
+  return match?.[1] ?? basename;
+}
+
+function readCodexSessionIndex(): Map<string, CodexSessionIndexRow> {
+  const indexPath = 'C:\\Users\\micha\\.codex\\session_index.jsonl';
+  const rows = new Map<string, CodexSessionIndexRow>();
+  if (!existsSync(indexPath)) return rows;
+  for (const line of tailFile(indexPath, 1_000_000)) {
+    try {
+      const row = JSON.parse(line) as CodexSessionIndexRow;
+      if (row.id) rows.set(row.id, row);
+    } catch {
+      continue;
+    }
+  }
+  return rows;
+}
+
+function readCodexConversationSnippetsFromFile(file: string): string[] {
+  const snippets: string[] = [];
+  for (const line of tailFile(file, 800_000).slice(-900)) {
+    try {
+      const entry = JSON.parse(line) as { type?: string; payload?: unknown };
+      const text = entry.type === 'response_item'
+        ? extractMessageText(entry.payload)
+        : entry.type === 'event_msg'
+          ? extractEventText(entry.payload)
+          : undefined;
+      if (text) snippets.push(text);
+    } catch {
+      continue;
+    }
+  }
+  return Array.from(new Set(snippets)).slice(-80);
+}
+
+export async function discoverCodexSessionSignals(): Promise<{ signals: AgentSignal[]; notes: string[] }> {
+  const root = 'C:\\Users\\micha\\.codex\\sessions';
+  const files = readNewestSessionFiles(root, 120, 1000 * 60 * 60 * 12);
+  const index = readCodexSessionIndex();
+  const now = new Date().toISOString();
+  const signals = files.map((file) => {
+    const stat = statSync(file);
+    const id = sessionIdFromPath(file);
+    const indexed = index.get(id);
+    const updatedIso = indexed?.updated_at ?? new Date(stat.mtimeMs).toISOString();
+    const ageMs = Date.now() - new Date(updatedIso).getTime();
+    const snippets = readCodexConversationSnippetsFromFile(file);
+    const threadName = indexed?.thread_name?.trim() || path.basename(file, '.jsonl').replace(/^rollout-[^-]+-/, 'Codex session ');
+    const status: AgentStatus = ageMs < 1000 * 60 * 20 ? 'active' : ageMs < 1000 * 60 * 90 ? 'idle' : 'sleeping';
+    return {
+      id: `codex-session:${id}`,
+      name: `Codex Session: ${redactSecretText(threadName).slice(0, 80)}`,
+      type: 'codex',
+      source: 'codex-session-adapter',
+      status,
+      confidence: snippets.length ? 0.96 : 0.74,
+      processName: 'codex-session-jsonl',
+      path: redactPathForPublic(file),
+      lastSeenIso: now,
+      lastActivityIso: updatedIso,
+      ports: [],
+      logSnippets: [],
+      conversationSnippets: snippets,
+      artifacts: [redactPathForPublic(file) ?? 'redacted codex session file'],
+      reasons: [
+        `Codex session transcript file modified ${new Date(stat.mtimeMs).toLocaleString()}`,
+        snippets.length ? `${snippets.length} redacted transcript entries parsed` : 'session file has no readable message entries yet'
+      ],
+      relationships: ['codex'],
+      liveAction: snippets.length ? 'revealing live Codex conversation scrolls' : 'waiting for Codex transcript entries'
+    } satisfies AgentSignal;
+  });
+  return { signals, notes: [`Codex session adapter found ${signals.length} recently active Codex session transcripts under ${redactPathForPublic(root)}.`] };
 }
 
 export async function discoverProcessSignals(): Promise<{ signals: AgentSignal[]; notes: string[] }> {

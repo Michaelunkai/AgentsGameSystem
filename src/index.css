@@ -491,6 +491,15 @@ input::placeholder { color: rgba(157, 179, 199, 0.68); }
   padding: 8px 0 8px 12px;
 }
 
+.control-warning {
+  margin: 12px 0 16px;
+  border: 1px solid rgba(255, 111, 97, 0.45);
+  border-radius: 16px;
+  padding: 12px;
+  color: #ffd8c8;
+  background: rgba(255, 111, 97, 0.1);
+}
+
 .meters {
   display: grid;
   gap: 12px;

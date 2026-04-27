@@ -1,6 +1,6 @@
-﻿{
-    "enabled":  true,
-    "observerUrl":  "https://thanksgiving-popular-bottom-timothy.trycloudflare.com",
-    "updatedAtIso":  "2026-04-27T21:04:47.0536938Z",
-    "note":  "Live bridge to this Windows PC. Requires the local observer and cloudflared processes to keep running."
+{
+  "enabled": true,
+  "observerUrl": "https://rhythm-emission-lamp-differently.trycloudflare.com",
+  "updatedAtIso": "2026-04-27T21:31:01.1767721Z",
+  "note": "Live bridge to this Windows PC. Requires the local observer and cloudflared processes to keep running."
 }

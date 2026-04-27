@@ -3,12 +3,13 @@ import { buildEvents } from '../src/lib/events';
 import { mapSignalToRpg } from '../src/lib/rpgMapper';
 import { FORBIDDEN_PROVIDER_MARKERS, tokenFreeProof } from '../src/lib/tokenFree';
 import { loadManualConfig } from './config';
-import { discoverFolderSignals, discoverManualSignals, discoverProcessSignals } from './adapters';
+import { discoverCodexSessionSignals, discoverFolderSignals, discoverManualSignals, discoverProcessSignals } from './adapters';
 
 export async function buildRealmSnapshot(): Promise<RealmSnapshot> {
   const generatedAtIso = new Date().toISOString();
   const manual = await loadManualConfig();
   const discoveries = await Promise.all([
+    discoverCodexSessionSignals(),
     discoverProcessSignals(),
     discoverFolderSignals(),
     discoverManualSignals(manual)

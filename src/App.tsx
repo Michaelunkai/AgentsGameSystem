@@ -136,6 +136,11 @@ function DetailPanel({ agent }: { agent?: RpgAgent }) {
         </div>
       </div>
       <p className="quest">{agent.quest}</p>
+      {agent.signal.source === 'codex-session-adapter' && (
+        <div className="control-warning">
+          Remote control is intentionally read-only here. This public site can view redacted local Codex transcripts through your bridge, but it does not execute commands on your PC.
+        </div>
+      )}
       <p className="live-action"><strong>Live RPG action:</strong> {agent.liveAction}</p>
       <div className="replay-stats">
         <span><strong>{agent.signal.conversationSnippets.length}</strong> transcript lines</span>
@@ -208,17 +213,17 @@ function AgentMenu({
   return (
     <aside className="agent-nav" aria-label="Running agents and sessions">
       <div className="agent-nav-title">
-        <p className="eyebrow">Running Sessions</p>
+        <p className="eyebrow">Codex Sessions</p>
         <h2>{agents.length} live</h2>
       </div>
       <label className="search-field">
         Find agent
-        <input value={search} onChange={(event) => onSearch(event.target.value)} placeholder="codex, browser, node..." />
+        <input value={search} onChange={(event) => onSearch(event.target.value)} placeholder="session name, prompt, file..." />
       </label>
       <label className="search-field">
         Status
         <select value={filter} onChange={(event) => onFilter(event.target.value as AgentStatus | 'all')}>
-          <option value="all">All currently running</option>
+          <option value="all">All live Codex sessions</option>
           {statusOrder.map((status) => <option key={status} value={status}>{status}</option>)}
         </select>
       </label>
@@ -242,8 +247,8 @@ function AgentMenu({
         ))}
         {!agents.length && (
           <div className="no-menu-results">
-            <strong>No running agents match this view.</strong>
-            <p>Clear filters or start a local agent process; configured-but-stopped sources are intentionally hidden.</p>
+            <strong>No Codex sessions match this view.</strong>
+            <p>Clear filters or start/use a Codex session; the menu is intentionally session-first, not process-first.</p>
           </div>
         )}
       </div>
@@ -389,18 +394,20 @@ function App() {
     };
   }, [refresh]);
 
-  const agents = useMemo(() => {
+  const menuAgents = useMemo(() => {
     const list = snapshot?.agents ?? [];
+    const codexSessions = list.filter((agent) => agent.signal.source === 'codex-session-adapter');
+    const sessionFirst = codexSessions.length ? codexSessions : list;
     const normalizedSearch = search.trim().toLowerCase();
-    return list.filter((agent) => {
+    return sessionFirst.filter((agent) => {
       const matchesStatus = filter === 'all' || agent.status === filter;
-      const haystack = `${agent.name} ${agent.type} ${agent.className} ${agent.liveAction} ${agent.signal.processName ?? ''}`.toLowerCase();
+      const haystack = `${agent.name} ${agent.type} ${agent.className} ${agent.liveAction} ${agent.signal.processName ?? ''} ${agent.signal.conversationSnippets.join(' ')}`.toLowerCase();
       return matchesStatus && (!normalizedSearch || haystack.includes(normalizedSearch));
     });
   }, [snapshot, filter, search]);
 
-  const clusters = useMemo(() => buildClusters(agents), [agents]);
-  const selected = snapshot?.agents.find((agent) => agent.id === selectedId) ?? agents[0];
+  const clusters = useMemo(() => buildClusters(menuAgents), [menuAgents]);
+  const selected = menuAgents.find((agent) => agent.id === selectedId) ?? menuAgents[0];
   const visibleStreamMode = paused ? 'paused' : streamMode;
 
   return (
@@ -429,8 +436,8 @@ function App() {
 
       <section className="control-bar">
         <div className="live-metrics" aria-label="Live observer status">
-          <strong>{snapshot?.agents.length ?? 0}</strong>
-          <span>currently running agents - {visibleStreamMode === 'streaming' ? `SSE stream every ${streamRefreshMs / 1000}s` : `${visibleStreamMode} polling every ${liveRefreshMs / 1000}s`} - last pulse {formatFreshness(snapshot?.generatedAtIso)}</span>
+          <strong>{menuAgents.length}</strong>
+          <span>Codex sessions in menu - {visibleStreamMode === 'streaming' ? `SSE stream every ${streamRefreshMs / 1000}s` : `${visibleStreamMode} polling every ${liveRefreshMs / 1000}s`} - last pulse {formatFreshness(snapshot?.generatedAtIso)}</span>
         </div>
         <strong className="connection-mode">{connectionMode}</strong>
         <div className="discovery-notes">
@@ -439,12 +446,12 @@ function App() {
       </section>
 
       <section className="realm-layout">
-        <AgentMenu agents={agents} selectedId={selected?.id} search={search} onSearch={setSearch} filter={filter} onFilter={setFilter} onSelect={setSelectedId} />
+        <AgentMenu agents={menuAgents} selectedId={selected?.id} search={search} onSearch={setSearch} filter={filter} onFilter={setFilter} onSelect={setSelectedId} />
         <div className="map-panel">
           <div className="map-header">
             <div>
               <p className="eyebrow">Moonlit Operations Map</p>
-              <h2>{clusters.length ? `${clusters.length} ecosystems, ${agents.length} agents` : 'No live agents yet'}</h2>
+              <h2>{clusters.length ? `${clusters.length} ecosystems, ${menuAgents.length} Codex sessions` : 'No live Codex sessions yet'}</h2>
             </div>
             <span>{snapshot ? new Date(snapshot.generatedAtIso).toLocaleTimeString() : 'scanning...'}</span>
           </div>
@@ -465,7 +472,7 @@ function App() {
                 onSelect={(selectedCluster) => setSelectedId(selectedCluster.agents[0]?.id)}
               />
             ))}
-            {!agents.length && <div className="guided-setup">Start local tools or run the live bridge; stopped/config-only sources stay hidden so the realm shows only running agents.</div>}
+            {!menuAgents.length && <div className="guided-setup">Start or use Codex; this menu shows session transcripts first, not browser helper processes.</div>}
           </div>
           <div className="ecosystem-strip">
             {clusters.map((cluster) => (
